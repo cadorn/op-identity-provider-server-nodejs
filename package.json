@@ -1,0 +1,10 @@
+{
+    "name": "op-identity-provider-server-nodejs",
+    "version": "0.1.0",
+    "private": true,
+    "pm": "npm",
+    "main": "server.js",
+    "dependencies": {
+    	"opjs-primitives": "~0.1.0"
+    }
+}
