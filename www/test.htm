@@ -10,6 +10,8 @@
         const INNER_FRAME_PLACEHOLDER_ID = "inner-frame";
         const TOOLS_CONTAINER_ID = "tools";
         const HCS_IDENTITY_DOMAIN = "{{=view.hcs.config.identity.domain}}";
+        const LOGGER_HOST = "{{=view.hcs.config.logger.host}}";
+        const OAUTH_LOGOUT_URL = "{{=view.hcs.config.identity.oauth.logoutURL}}";
 
 
         /**
@@ -17,7 +19,7 @@
          */
         
         if (window.__LOGGER) {
-            window.__LOGGER.setUrl("//{{=view.hcs.config.logger.host}}/tools/logger/record");
+            window.__LOGGER.setUrl("//" + LOGGER_HOST + "/tools/logger/record");
             window.__LOGGER.setChannel("identity-outer-js-all");
         }
         function log() {
@@ -32,6 +34,10 @@
         /**
          * Util
          */
+
+        function generateId() {
+            return (Math.floor(Math.random() * 1000000) + 1 + "");
+        }
 
         function generateInnerFrame (url) {
             log('generateInnerFrame(url)', url);
@@ -58,6 +64,44 @@
             }
             var url = iframe.attr("src");
             return iframe[0].contentWindow.postMessage(message, url.replace(/$(https?:\/\/[^\/]+)/, "$1"));
+        }
+
+        function callIdentityProvider(request, callback) {
+            log("callIdentityProvider(request)", request);
+            return $.ajax({
+                url : "/api.php",
+                type : "POST",
+                data : JSON.stringify({
+                    "request": request
+                }),
+                contentType: "application/json",
+                // callback handler that will be called on success
+                success : function(response, textStatus, jqXHR) {
+                    log("callIdentityProvider() - success", response);
+                    var result = null;
+                    if (typeof response === "string") {
+                        try {
+                            result = JSON.parse(response).result;
+                        } catch (err) {
+                            log("callIdentityProvider() - success", response);
+                            return callback(new Error("Error '" + err.message + "' parsing JSON response!"));
+                        }
+                    } else {
+                        result = response.result;
+                    }            
+                    if (result.error) {
+                        // result.error.reason.message
+                        // result.error.reason.$id
+                        log("callIdentityProvider() - error", result.error.reason);
+                    }
+                    return callback(null, result);
+                },
+                // callback handler that will be called on error
+                error : function(jqXHR, textStatus, errorThrown) {
+                    log("callIdentityProvider() - error", textStatus);
+                    return callback(new Error("Error '" + textStatus + "' calling identity provider API"));
+                }
+            });
         }
 
         function getUrlFor(uri) {
@@ -90,12 +134,36 @@
          * Dev Tools
          */
 
+        var lastToolsData = {};
+        var visibleStages = [];
+
         function initTools() {
             if (!TOOLS_CONTAINER_ID) {
                 return TOOLS_CONTAINER_ID;
             }
 
             log('initTools()');
+
+            function makeIdentityAccess(invalid) {
+                var identityCredentials = JSON.parse($("#" + TOOLS_CONTAINER_ID + "-loggedin > [name=\"identity\"]").html());
+                var identityAccess = {
+                    "accessToken": identityCredentials.accessToken,
+                    // TODO: Calculare proof instead of using secret. [Security]
+                    "accessSecretProof": identityCredentials.accessSecret,
+                    "accessSecretProofExpires": identityCredentials.accessSecretExpires,
+                    "uri": identityCredentials.uri,
+                    "provider": identityCredentials.provider
+                }
+                if (invalid) {
+                    identityAccess.accessToken += "-invalid";
+                }
+                return identityAccess;
+            }
+
+            visibleStages = [
+                "dev",
+                "init"
+            ];
 
             var section = null;
             var button = null;
@@ -117,17 +185,9 @@
                 });
                 button.appendTo(section);
 
-                button = $('<button>oAuth Login</button>');
-                button.click(function() {
-console.log("TODO: implement");
-//                    window.initInnerFrame(getUrlFor("/login"));
-                });
-                button.appendTo(section);
-
                 button = $('<button>oAuth Logout</button>');
                 button.click(function() {
-console.log("TODO: implement");
-//                    window.initInnerFrame(getUrlFor("/logout"));
+                    window.initInnerFrame(OAUTH_LOGOUT_URL);
                 });
                 button.appendTo(section);
 
@@ -142,14 +202,102 @@ console.log("TODO: implement");
 
                 button = $('<button>Lockbox Update (fail)</button>');
                 button.click(function() {
-console.log("Call lockbox update get with wrong info");
+                    return sendMessageToInnerFrame({
+                        "request": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": generateId(),
+                            "$method": "identity-access-lockbox-update",
+                            "nonce": "na",
+                            "identity": makeIdentityAccess(true),
+                            "lockbox": {
+                                "domain": "domain.com",
+                                "key": "V20x...IbGFWM0J5WTIxWlBRPT0="
+                            }
+                        }
+                    });
                 });
                 button.appendTo(section);
 
                 button = $('<button>Rolodex Credentials (fail)</button>');
                 button.click(function() {
-console.log("Call rolodex credentials get with wrong info");
+                    return sendMessageToInnerFrame({
+                        "request": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": generateId(),
+                            "$method": "identity-access-rolodex-credentials-get",
+                            // TODO: Rename to 'nonce'?
+                            "clientNonce": "na",
+                            "identity": makeIdentityAccess(true)
+                        }
+                    });
                 });
+                button.appendTo(section);
+
+                button = $('<button>Validate Access (fail)</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessValidateRequest
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-access-validate",
+                        "nonce": "na",
+                        "purpose": "whatever",
+                        "identity": makeIdentityAccess(true)
+                    }, function (err, result) {
+                        var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
+                        if (result.error) {
+                            return showTools(stage, {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools(stage, {
+                                result: "{}"
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Update Lookup (fail)</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-lookup-update",
+                        "nonce": "na",
+                        "lockbox": {
+                            "$id": generateId(),
+                            "domain": HCS_IDENTITY_DOMAIN,
+                            "accessToken": generateId(),
+                            "accessSecretProof": generateId(),
+                            "accessSecretProofExpires": Date.now() + 60 * 60 * 24 * 1000
+                        },
+                        "identity": makeIdentityAccess(true)
+                    }, function (err, result) {
+                        var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
+                        if (result.error) {
+                            return showTools(stage, {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools(stage, {
+                                result: "{}"
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<pre name="result"></pre>');
                 button.appendTo(section);
 
             section = $('<div id="' + TOOLS_CONTAINER_ID + '-ready" class="hidden"><h2>App API after login ready</h2></div>');
@@ -164,7 +312,7 @@ console.log("Call rolodex credentials get with wrong info");
                             "$domain": HCS_IDENTITY_DOMAIN,
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
-                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$id": generateId(),
                             "$method": "identity-access-start",
                             "agent": {
                                 "userAgent": "OpenPeerSampleApp/1.0 (iPhone OS 6.1.2;iPad) HOPID/1.0 (777)",
@@ -197,7 +345,7 @@ console.log("Call rolodex credentials get with wrong info");
                             "$domain": HCS_IDENTITY_DOMAIN,
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
-                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$id": generateId(),
                             "$method": "identity-access-reset",
                             "browser": {
                                 "outerFrameURL": addQueryParameters(window.location.href, {
@@ -222,16 +370,10 @@ console.log("Call rolodex credentials get with wrong info");
                             "$domain": HCS_IDENTITY_DOMAIN,
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
-                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$id": generateId(),
                             "$method": "identity-access-lockbox-update",
-                            "nonce": "ed585021eec72de8634ed1a5e24c66c2",
-                            "identity": {
-                                "accessToken": "a913c2c3314ce71aee554986204a349b",
-                                "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-                                "accessSecretProofExpires": 43843298934,
-                                "uri": "identity://domain.com/alice",
-                                "provider": "domain.com"
-                            },
+                            "nonce": "na",
+                            "identity": makeIdentityAccess(),
                             "lockbox": {
                                 "domain": "domain.com",
                                 "key": "V20x...IbGFWM0J5WTIxWlBRPT0="
@@ -248,16 +390,11 @@ console.log("Call rolodex credentials get with wrong info");
                             "$domain": HCS_IDENTITY_DOMAIN,
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
-                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$id": generateId(),
                             "$method": "identity-access-rolodex-credentials-get",
-                            "clientNonce": "ed585021eec72de8634ed1a5e24c66c2",
-                            "identity": {
-                                "accessToken": "a913c2c3314ce71aee554986204a349b",
-                                "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-                                "accessSecretProofExpires": 43843298934,
-                                "uri": "identity://domain.com/alice",
-                                "provider": "domain.com"
-                            }
+                            // TODO: Rename to 'nonce'?
+                            "clientNonce": "na",
+                            "identity": makeIdentityAccess()
                         }
                     });
                 });
@@ -265,19 +402,179 @@ console.log("Call rolodex credentials get with wrong info");
 
                 button = $('<button>Validate Access</button>');
                 button.click(function() {
-console.log("TODO: Call identity-access-validate");
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessValidateRequest
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-access-validate",
+                        "nonce": "na",
+                        "purpose": "whatever",
+                        "identity": makeIdentityAccess()
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("loggedin", {
+                                result: "{}"
+                            });
+                        }
+                    });
                 });
                 button.appendTo(section);
 
-                button = $('<button>Create Access</button>');
+                button = $('<button>Update Lookup (create)</button>');
                 button.click(function() {
-console.log("TODO: Call identity-lookup-update and create association");
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
+                    var identity = makeIdentityAccess();
+                    var identityExtra = {
+                        "stableID": "0acc990c7b6e7d5cb9a3183d432e37776fb182bf",
+                        "peer": {},
+                        "priority": 5,
+                        "weight": 1,
+                        "contactProofBundle": {
+                            "contactProof": {
+                                "$id": "2d950c960b52c32a4766a148e8a39d0527110fee",
+                                "stableID": "0acc990c7b6e7d5cb9a3183d432e37776fb182bf",
+                                "contact": "peer://example.com/ab43bd44390dabc329192a392bef1",
+                                "uri": "identity://domain.com/alice",
+                                "created": 54593943,
+                                "expires": 65439343
+                            },
+                            "signature": {
+                                "reference": "#2d950c960b52c32a4766a148e8a39d0527110fee",
+                                "algorithm": "http://meta.openpeer.org/2012/12/14/jsonsig#rsa-sha1",
+                                "digestValue": "Wm1Sa...lptUT0=",
+                                "digestSigned": "ZmRh...2FzZmQ=",
+                                "key": { "uri": "peer://example.com/ab43bd44390dabc329192a392bef1" }
+                            }
+                        }
+                    };
+                    for (var name in identityExtra) {
+                        identity[name] = identityExtra[name];
+                    }
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-lookup-update",
+                        "nonce": "na",
+                        "lockbox": {
+                            "$id": generateId(),
+                            "domain": HCS_IDENTITY_DOMAIN,
+                            "accessToken": generateId(),
+                            "accessSecretProof": generateId(),
+                            "accessSecretProofExpires": Date.now() + 60 * 60 * 24 * 1000
+                        },
+                        "identity": identity
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("loggedin", {
+                                result: "{}"
+                            });
+                        }
+                    });
                 });
                 button.appendTo(section);
 
-                button = $('<button>Remove Access</button>');
+                button = $('<button>Update Lookup (remove)</button>');
                 button.click(function() {
-console.log("TODO: Call identity-lookup-update and remove association");
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-lookup-update",
+                        "nonce": "na",
+                        "identity": makeIdentityAccess()
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("loggedin", {
+                                result: "{}"
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Check Lookup</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupCheckRequest
+                    var identity = makeIdentityAccess();
+                    var m = identity.uri.match(/^(.+?)\/([^\/]+)$/);
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity-lookup",
+                        "$id": generateId(),
+                        "$method": "identity-lookup-check",
+                        "providers": {
+                            "provider": [
+                                {
+                                    "base": m[1],
+                                    "separator": ",",
+                                    "identities": m[2]
+                                }
+                            ]
+                        }
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.identities, null, 4)
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Lookup</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupRequest
+                    var identity = makeIdentityAccess();
+                    var m = identity.uri.match(/^(.+?)\/([^\/]+)$/);
+                    return callIdentityProvider({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity-lookup",
+                        "$id": generateId(),
+                        "$method": "identity-lookup",
+                        "providers": {
+                            "provider": [
+                                {
+                                    "base": m[1],
+                                    "separator": ",",
+                                    "identities": m[2]
+                                }
+                            ]
+                        }
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(result.identities, null, 4)
+                            });
+                        }
+                    });
                 });
                 button.appendTo(section);
 
@@ -285,11 +582,14 @@ console.log("TODO: Call identity-lookup-update and remove association");
                 button.appendTo(section);
         }
 
-        var lastToolsData = {};
+        var resultTimeouts = {};
         function showTools (stage, data) {
             $("#" + TOOLS_CONTAINER_ID + "-" + stage).removeClass("hidden");
             if (!lastToolsData[stage]) {
                 lastToolsData[stage] = {};
+            }
+            if (visibleStages.indexOf(stage) === -1) {
+                visibleStages.push(stage);
             }
             if (data) {
                 for (var name in data) {
@@ -299,7 +599,10 @@ console.log("TODO: Call identity-lookup-update and remove association");
             for (var name in lastToolsData[stage]) {
                 $("#" + TOOLS_CONTAINER_ID + "-" + stage + " > [name=\"" + name + "\"]").html(lastToolsData[stage][name]);
                 if (name === "result") {
-                    setTimeout(function() {
+                    if (resultTimeouts[stage]) {
+                        clearTimeout(resultTimeouts[stage]);
+                    }
+                    resultTimeouts[stage] = setTimeout(function() {
                         $("#" + TOOLS_CONTAINER_ID + "-" + stage + " > [name=\"" + name + "\"]").html("");
                     }, 3 * 1000);
                 }
@@ -314,9 +617,6 @@ console.log("TODO: Call identity-lookup-update and remove association");
         window.initInnerFrame = function (identityLoginURL) {
 
             log('window.initInnerFrame(identityLoginURL)', identityLoginURL);
-
-    // TODO: Do we still need this? Don't think so.
-    //        localStorage.innerFrameURL = innerFrameURL;
 
             generateInnerFrame(identityLoginURL);
 
@@ -370,15 +670,29 @@ console.log("TODO: Call identity-lookup-update and remove association");
                     if (message.result.$handler === "identity") {
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessLockboxUpdateRequest
                         if (message.result.$method === "identity-access-lockbox-update") {
-                            return showTools("loggedin", {
-                                result: "OK"
-                            });
+                            var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
+                            if (message.result.error) {
+                                return showTools(stage, {
+                                    result: JSON.stringify(message.result.error, null, 4)
+                                });
+                            } else {
+                                return showTools(stage, {
+                                    result: "{}"
+                                });
+                            }
                         } else
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#IdentityServiceRequestsAnnex-IdentityAccessRolodexCredentialsGetRequest
                         if (message.result.$method === "identity-access-rolodex-credentials-get") {
-                            return showTools("loggedin", {
-                                result: JSON.stringify(message.result.rolodex, null, 4)
-                            });
+                            var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
+                            if (message.result.error) {
+                                return showTools(stage, {
+                                    result: JSON.stringify(message.result.error, null, 4)
+                                });
+                            } else {
+                                return showTools(stage, {
+                                    result: JSON.stringify(message.result.rolodex, null, 4)
+                                });
+                            }
                         }
                     }
                 }
@@ -409,7 +723,7 @@ console.log("TODO: Call identity-lookup-update and remove association");
     </script>
 </head>
 <body onload="init();">
-    <h1>Identity Provider Tests</h1>
+    <h1>Identity Provider &amp; Contacts Integration Tests</h1>
     <div id="tools"></div>
     <div id="inner-frame" class="hidden"></div>
 </body>

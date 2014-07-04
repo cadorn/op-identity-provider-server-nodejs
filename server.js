@@ -9,6 +9,8 @@ const PASSPORT_OAUTH2 = require("passport-oauth2");
 const REQUEST = require("request");
 const CRYPTO = require("crypto");
 
+const MODEL_IDENTITY_LOOKUP = require("./models/identity-lookup");
+
 
 var hcsConfigBasePath = "/opt/data/config2";
 var hcsIntegrationConfigPath = PATH.join(hcsConfigBasePath, "hcs-integration.json");
@@ -161,6 +163,30 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
             return res.end(payload);
         }
 
+        function validateAccess(request, callback) {
+            if (
+                req.session.credentials &&
+                request.identity.accessToken === req.session.credentials.accessToken &&
+                request.identity.uri === req.session.credentials.uri
+            ) {
+                if (request.nonce === "na") {
+                    if (
+                        // TODO: This needs to be fixed when we send the actual proof. [Security]
+                        request.identity.accessSecretProof === req.session.credentials.accessSecret &&
+                        // TODO: This needs to be fixed when we send the actual proof. [Security]
+                        request.identity.accessSecretProofExpires === req.session.credentials.accessSecretExpires
+                    ) {
+                        return callback(null, true);
+                    } else {
+                        return callback(null, false);
+                    }
+                } else {
+                    return callback(null, true);
+                }
+            }
+            return callback(null, false);
+        }
+
         try {
 
             if (request.$handler === "identity-provider") {
@@ -209,17 +235,22 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
                         return next(new Error("identity.base does not match"));
                     }
 
+                    // TODO: Instead of storing this on the session it should be stored in DB by access token. [Security]
+                    req.session.credentials = {
+                        "accessToken": generateId(),
+                        "accessSecret": generateId(),
+                        "accessSecretExpires": Date.now() + 60 * 60 * 24 * 1000,
+                        "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
+                    };
+
                     return respond({
                         "identity": {
-                            "accessToken": "facebook-100024352456-345345542345-dsgtyewdrq6r3rtytiuytw45yt",
-                            "accessSecret": "rqy4rtyqiryqwieyrtq46tryertyqu43r6yq",
-                            "accessSecretExpires": Date.now() + 60 * 60 * 24 * 1000,
-                            "uri": request.identity.base + "/" + req.session.user.id,
-                            "reloginKey": req.session.login.reloginKey,
-                            // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-//                            "profile": integrationConfig.identity.oauth.publicProfileURL.replace(/\{id\}/g, req.session.user.id),
-                            // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-//                            "vprofile": integrationConfig.identity.oauth.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id)
+                            "accessToken": req.session.credentials.accessToken,
+                            "accessSecret": req.session.credentials.accessSecret,
+                            "accessSecretExpires": req.session.credentials.accessSecretExpires,
+                            "uri": req.session.credentials.uri,
+                            // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
+                            "reloginKey": req.session.login.reloginKey
                         },
                         "lockbox": {
                             "reset": false,
@@ -230,35 +261,86 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
                 } else
                 // TODO: Document
                 if (request.$method === "lockbox-half-key-store") {
-/*
-        "nonce": request.nonce,
-        "identity": {
-            "accessToken": request.identity.accessToken,
-            "accessSecretProof": request.identity.accessSecretProof,
-            "accessSecretProofExpires": request.identity.accessSecretProofExpires,            
-            // TODO: What is this used for?
-            "type": self.session.authType,
-            // TODO: What is this used for?
-            "identifier": "",
-            "uri": request.identity.uri
-        },
-        "lockbox": {
-            "keyEncrypted": keyEncrypted
-        }
-*/
+                    return validateAccess(request, function(err, hasAccess) {
+                        if (err) return next(err);
+                        if (!hasAccess) {
+                            return respond({
+                                "error": {
+                                    "reason": "Invalid Token",
+                                    "$id": 403
+                                }
+                            });
+                        } else {
 
-console.log("TODO: Store lockbox key:", request.lockbox.keyEncrypted);
+                            // TODO: Store lockbox key in DB instead of on session.
+                            req.session.lockbox = request.lockbox;
 
-                    return respond({});
+                            return respond({});
+                        }
+                    });
                 } else
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#IdentityServiceRequestsAnnex-IdentityAccessRolodexCredentialsGetRequest
                 if (request.$method === "identity-access-rolodex-credentials-get") {
+                    return validateAccess(request, function(err, hasAccess) {
+                        if (err) return next(err);
+                        if (!hasAccess) {
+                            return respond({
+                                "error": {
+                                    "reason": "Invalid Token",
+                                    "$id": 403
+                                }
+                            });
+                        } else {
 
-console.log("TODO: Get rolodex token for:", request.identity);
+                            function makeToken(callback) {
+                                /*
+                                <sharedSecret> = 52+ plain text characters
+                                <iv> = MD5 random hash (16 bytes)
+                                token = hex(<iv>) + "-" + hex(AES.encrypt(sha256(<sharedSecret>), <iv>, <credentials>))
+                                <credentials> = JSON.stringify({
+                                    service: <name (github|twitter|linkedin|facebook)>
+                                    consumer_key: <OAuth consumer/api key provided by service>,
+                                    consumer_secret: <OAuth consumer/api secret provided by service>,
+                                    token: <OAuth access token>,
+                                    token_secret: <OAuth access token secret>
+                                })
+                                */
+                                var tokenInfo = {
+                                    service: URL.parse(AUTH_CONFIG.authorizationURL).host,
+                                    identifier: req.session.user.id,
+                                    consumer_key: AUTH_CONFIG.clientID,
+                                    consumer_secret: AUTH_CONFIG.clientSecret,
+                                    token: req.session.user.accessToken
+                                };
+                                var tokenSecret = integrationConfig.rolodex.sharedSecret;
+                                return CRYPTO.randomBytes(32, function(err, buffer) {
+                                    if (err) return callback(err);
 
-                    return respond({
-                        "rolodex": {
-                            "serverToken": "b3ff46bae8cacd1e572ee5e158bcb04ed9297f20-9619e3bc-4cd41c9c64ab2ed2a03b45ace82c546d"
+                                    var iv = CRYPTO.createHash("md5");
+                                    iv.update(buffer.toString("hex"));
+                                    iv = iv.digest();
+
+                                    var secretHash = CRYPTO.createHash("sha256");
+                                    secretHash.update(tokenSecret);
+                                    secretHash = secretHash.digest();
+
+                                    var cipher = CRYPTO.createCipheriv('aes-256-cfb', secretHash, iv);
+                                    var encryptdata = cipher.update(JSON.stringify(tokenInfo));
+                                    encryptdata += cipher.final();
+
+                                    return callback(null, new Buffer(iv, 'binary').toString('hex') + "-" + new Buffer(encryptdata, 'binary').toString('hex'));
+                                });
+                            }
+
+                            return makeToken(function(err, token) {
+                                if (err) return next(err);
+
+                                return respond({
+                                    "rolodex": {
+                                        "serverToken": token
+                                    }
+                                });
+                            });
                         }
                     });
                 }
@@ -266,85 +348,92 @@ console.log("TODO: Get rolodex token for:", request.identity);
             if (request.$handler === "identity") {
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessValidateRequest
                 if (request.$method === "identity-access-validate") {
-/*
-"nonce": "ed585021eec72de8634ed1a5e24c66c2",
-    "purpose": "whatever",
-    "identity": {
-      "accessToken": "a913c2c3314ce71aee554986204a349b",
-      "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-      "accessSecretProofExpires": 43843298934,
-
-      "uri": "identity://domain.com/alice",
-      "provider": "domain.com"
-    }
-*/
-
-console.log("TODO: Validate identity");
-
-                    return respond({});
-                }
-            } else
-            if (request.$handler === "identity") {
+                    return validateAccess(request, function(err, hasAccess) {
+                        if (err) return next(err);
+                        if (!hasAccess) {
+                            return respond({
+                                "error": {
+                                    "reason": "Invalid Token",
+                                    "$id": 403
+                                }
+                            });
+                        } else {
+                            // TODO: Do we need to do additional validation?
+                            return respond({});
+                        }
+                    });
+                } else
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
                 if (request.$method === "identity-lookup-update") {
-/*
-"nonce": "ed585021eec72de8634ed1a5e24c66c2",
-    "lockbox": {
-      "$id": "123456",
-      "domain": "domain.com",
-      "accessToken": "a913c2c3314ce71aee554986204a349b",
-      "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-      "accessSecretProofExpires": 43843298934
-    },
-    "identity": {
-      "accessToken": "a913c2c3314ce71aee554986204a349b",
-      "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-      "accessSecretProofExpires": 43843298934,
+                    return validateAccess(request, function(err, hasAccess) {
+                        if (err) return next(err);
+                        if (!hasAccess) {
+                            return respond({
+                                "error": {
+                                    "reason": "Invalid Token",
+                                    "$id": 403
+                                }
+                            });
+                        } else {
+                            if (request.identity.peer) {
 
-      "uri": "identity://domain.com/alice",
-      "provider": "domain.com",
+                                var identity = JSON.parse(JSON.stringify(request.identity));
+                                delete identity.accessToken;
+                                delete identity.accessSecretProof;
+                                delete identity.accessSecretProofExpires;
 
-      "stableID": "0acc990c7b6e7d5cb9a3183d432e37776fb182bf",
-      "peer": {...},
-      "priority": 5,
-      "weight": 1,
-      "contactProofBundle": {
-        "contactProof": {
-          "$id": "2d950c960b52c32a4766a148e8a39d0527110fee",
-          "stableID": "0acc990c7b6e7d5cb9a3183d432e37776fb182bf",
-          "contact": "peer://example.com/ab43bd44390dabc329192a392bef1",
-          "uri": "identity://domain.com/alice",
-          "created": 54593943,
-          "expires": 65439343
-        },
-        "signature": {
-          "reference": "#2d950c960b52c32a4766a148e8a39d0527110fee",
-          "algorithm": "http://meta.openpeer.org/2012/12/14/jsonsig#rsa-sha1",
-          "digestValue": "Wm1Sa...lptUT0=",
-          "digestSigned": "ZmRh...2FzZmQ=",
-          "key": { "uri": "peer://example.com/ab43bd44390dabc329192a392bef1" }
-        }
-      }
-    }
+                                identity.name = "Username: " + req.session.user.id;
+                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
+                                identity.profile = integrationConfig.identity.oauth.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
+                                identity.vprofile = integrationConfig.identity.oauth.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
+                                identity.feed = integrationConfig.identity.oauth.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
+                                identity.avatars = {
+                                    "avatar": {
+                                        "url": integrationConfig.identity.oauth.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                    }
+                                };
 
-
-    "nonce": "ed585021eec72de8634ed1a5e24c66c2",
-    "identity": {
-      "accessToken": "a913c2c3314ce71aee554986204a349b",
-      "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
-      "accessSecretProofExpires": 43843298934,
-
-      "uri": "identity://domain.com/alice",
-      "provider": "domain.com"      
-    }
-*/
-
-console.log("TODO: Update identity");
-
-                    return respond({});
+                                return MODEL_IDENTITY_LOOKUP.create(identity, function (err) {
+                                    if (err) return next(err);
+                                    return respond({});
+                                });
+                            } else {
+                                return MODEL_IDENTITY_LOOKUP.remove(request.identity, function (err) {
+                                    if (err) return next(err);
+                                    return respond({});
+                                });
+                            }
+                        }
+                    });
+                }
+            } else
+            if (request.$handler === "identity-lookup") {
+                // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupCheckRequest
+                if (request.$method === "identity-lookup-check") {
+                    return MODEL_IDENTITY_LOOKUP.check(request.providers.provider, function (err, identities) {
+                        if (err) return next(err);
+                        return respond({
+                            "identities": {
+                                "identity": identities
+                            }
+                        });
+                    });
+                } else
+                // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupRequest
+                if (request.$method === "identity-lookup") {
+                    return MODEL_IDENTITY_LOOKUP.lookup(request.providers.provider, function (err, identities) {
+                        if (err) return next(err);
+                        return respond({
+                            "identities": {
+                                "identity": identities
+                            }
+                        });
+                    });
                 }
             }
-
         } catch (err) {
             return next(err);
         }
