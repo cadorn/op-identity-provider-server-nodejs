@@ -1,0 +1,416 @@
+<html>
+<head>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="text/javascript" src="/jquery.min.js"></script>
+    <script type="text/javascript" src="//{{=view.hcs.config.logger.host}}/tools/logger/logger.js"></script>
+    <script type="text/javascript">
+    ((function(window) {
+
+
+        const INNER_FRAME_PLACEHOLDER_ID = "inner-frame";
+        const TOOLS_CONTAINER_ID = "tools";
+        const HCS_IDENTITY_DOMAIN = "{{=view.hcs.config.identity.domain}}";
+
+
+        /**
+         * Logger
+         */
+        
+        if (window.__LOGGER) {
+            window.__LOGGER.setUrl("//{{=view.hcs.config.logger.host}}/tools/logger/record");
+            window.__LOGGER.setChannel("identity-outer-js-all");
+        }
+        function log() {
+            if (window.__LOGGER) {
+                return window.__LOGGER.log.apply(null, arguments);
+            } else {
+                return console.log(arguments);
+            }
+        }
+
+
+        /**
+         * Util
+         */
+
+        function generateInnerFrame (url) {
+            log('generateInnerFrame(url)', url);
+            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > IFRAME").remove();
+            initTools();
+            $('<iframe src="' + url + '"></iframe>').appendTo("#" + INNER_FRAME_PLACEHOLDER_ID);
+        }
+
+        function hideInnerFrame() {
+            $("#" + INNER_FRAME_PLACEHOLDER_ID).removeClass("hidden");
+            $("#" + INNER_FRAME_PLACEHOLDER_ID).addClass("simulate-hidden");
+        }
+
+        function showInnerFrame() {
+            $("#" + INNER_FRAME_PLACEHOLDER_ID).removeClass("hidden");
+            $("#" + INNER_FRAME_PLACEHOLDER_ID).removeClass("simulate-hidden");
+        }
+
+        function sendMessageToInnerFrame (message) {
+            log('sendToInnerFrame(message)', message);
+            var iframe = $("#" + INNER_FRAME_PLACEHOLDER_ID + " > IFRAME");
+            if (iframe.length === 0) {
+                throw new Error("Cannot send message to inner frame. No inner frame loaded!");
+            }
+            var url = iframe.attr("src");
+            return iframe[0].contentWindow.postMessage(message, url.replace(/$(https?:\/\/[^\/]+)/, "$1"));
+        }
+
+        function getUrlFor(uri) {
+            return window.location.protocol + "//" + window.location.host + uri;
+        }
+
+        function addQueryParameters(url, parameters) {
+            var m = url.match(/^([^\?]+)(?:\?(.+))?$/);
+            if (!m) {
+                throw new Error("Error parsing url '" + url + "'");
+            }
+            console.log("m", m);
+            var qs = {};
+            if (m[2]) {
+                m[2].split("&").forEach(function (pair) {
+                    pair = pair.split("=");
+                    qs[pair[0]] = pair[1];
+                });
+            }
+            for (var name in parameters) {
+                qs[name] = parameters[name];
+            }
+            return m[1] + "?" + Object.keys(qs).map(function (name) {
+                return name + "=" + qs[name];
+            }).join("&");
+        }
+
+
+        /**
+         * Dev Tools
+         */
+
+        function initTools() {
+            if (!TOOLS_CONTAINER_ID) {
+                return TOOLS_CONTAINER_ID;
+            }
+
+            log('initTools()');
+
+            var section = null;
+            var button = null;
+
+            $("#" + TOOLS_CONTAINER_ID).html("");
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-dev"><h2>Extra for development</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<button>Identity Provider Login</button>');
+                button.click(function() {
+                    window.initInnerFrame(getUrlFor("/login"));
+                });
+                button.appendTo(section);
+
+                button = $('<button>Identity Provider Logout</button>');
+                button.click(function() {
+                    window.initInnerFrame(getUrlFor("/logout"));
+                });
+                button.appendTo(section);
+
+                button = $('<button>oAuth Login</button>');
+                button.click(function() {
+console.log("TODO: implement");
+//                    window.initInnerFrame(getUrlFor("/login"));
+                });
+                button.appendTo(section);
+
+                button = $('<button>oAuth Logout</button>');
+                button.click(function() {
+console.log("TODO: implement");
+//                    window.initInnerFrame(getUrlFor("/logout"));
+                });
+                button.appendTo(section);
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-init"><h2>App API on load</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<button>Trigger OpenPeer Login</button>');
+                button.click(function() {
+                    window.initInnerFrame(getUrlFor("/login.php"));
+                });
+                button.appendTo(section);
+
+                button = $('<button>Lockbox Update (fail)</button>');
+                button.click(function() {
+console.log("Call lockbox update get with wrong info");
+                });
+                button.appendTo(section);
+
+                button = $('<button>Rolodex Credentials (fail)</button>');
+                button.click(function() {
+console.log("Call rolodex credentials get with wrong info");
+                });
+                button.appendTo(section);
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-ready" class="hidden"><h2>App API after login ready</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<button>Access Start</button>');
+                button.click(function() {
+
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessStartNotification
+                    return sendMessageToInnerFrame({
+                        "notify": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$method": "identity-access-start",
+                            "agent": {
+                                "userAgent": "OpenPeerSampleApp/1.0 (iPhone OS 6.1.2;iPad) HOPID/1.0 (777)",
+                                "name": "OpenPeerSampleApp",
+                                "image": "http://hookflash.com/wp-content/themes/CleanSpace/images/logo.png",
+                                "url": "www.openpeer.org"
+                            },
+                            "identity": {
+                                "base": "identity://" + HCS_IDENTITY_DOMAIN + "/",
+                                "provider": HCS_IDENTITY_DOMAIN
+                            },
+                            "browser": {
+                                "visibility": "visible-on-demand",
+                                "popup": "deny",
+                                "outerFrameURL": addQueryParameters(window.location.href, {
+                                    trigger: "login"
+                                })
+                            }
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Access Reset</button>');
+                button.click(function() {
+
+                    // TODO: Document API call.
+                    return sendMessageToInnerFrame({
+                        "notify": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$method": "identity-access-reset",
+                            "browser": {
+                                "outerFrameURL": addQueryParameters(window.location.href, {
+                                    trigger: "login"
+                                })
+                            }
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-loggedin" class="hidden"><h2>App API after login complete</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<pre name="identity"></pre>');
+                button.appendTo(section);
+
+                button = $('<button>Lockbox Update</button>');
+                button.click(function() {
+                    return sendMessageToInnerFrame({
+                        "request": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$method": "identity-access-lockbox-update",
+                            "nonce": "ed585021eec72de8634ed1a5e24c66c2",
+                            "identity": {
+                                "accessToken": "a913c2c3314ce71aee554986204a349b",
+                                "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
+                                "accessSecretProofExpires": 43843298934,
+                                "uri": "identity://domain.com/alice",
+                                "provider": "domain.com"
+                            },
+                            "lockbox": {
+                                "domain": "domain.com",
+                                "key": "V20x...IbGFWM0J5WTIxWlBRPT0="
+                            }
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Rolodex Credentials</button>');
+                button.click(function() {
+                    return sendMessageToInnerFrame({
+                        "request": {
+                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$appid": "com.hookflash.OpenPeerSampleApp",
+                            "$handler": "identity",
+                            "$id": "A2njBGMmwKAjxiH23SW5myMf5CGfrbVT",
+                            "$method": "identity-access-rolodex-credentials-get",
+                            "clientNonce": "ed585021eec72de8634ed1a5e24c66c2",
+                            "identity": {
+                                "accessToken": "a913c2c3314ce71aee554986204a349b",
+                                "accessSecretProof": "b7277a5e49b3f5ffa9a8cb1feb86125f75511988",
+                                "accessSecretProofExpires": 43843298934,
+                                "uri": "identity://domain.com/alice",
+                                "provider": "domain.com"
+                            }
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Validate Access</button>');
+                button.click(function() {
+console.log("TODO: Call identity-access-validate");
+                });
+                button.appendTo(section);
+
+                button = $('<button>Create Access</button>');
+                button.click(function() {
+console.log("TODO: Call identity-lookup-update and create association");
+                });
+                button.appendTo(section);
+
+                button = $('<button>Remove Access</button>');
+                button.click(function() {
+console.log("TODO: Call identity-lookup-update and remove association");
+                });
+                button.appendTo(section);
+
+                button = $('<pre name="result"></pre>');
+                button.appendTo(section);
+        }
+
+        var lastToolsData = {};
+        function showTools (stage, data) {
+            $("#" + TOOLS_CONTAINER_ID + "-" + stage).removeClass("hidden");
+            if (!lastToolsData[stage]) {
+                lastToolsData[stage] = {};
+            }
+            if (data) {
+                for (var name in data) {
+                    lastToolsData[stage][name] = data[name];
+                }
+            }
+            for (var name in lastToolsData[stage]) {
+                $("#" + TOOLS_CONTAINER_ID + "-" + stage + " > [name=\"" + name + "\"]").html(lastToolsData[stage][name]);
+                if (name === "result") {
+                    setTimeout(function() {
+                        $("#" + TOOLS_CONTAINER_ID + "-" + stage + " > [name=\"" + name + "\"]").html("");
+                    }, 3 * 1000);
+                }
+            }
+        }
+
+
+        /**
+         * App API - These methods get called by the application hosting this web view.
+         */
+
+        window.initInnerFrame = function (identityLoginURL) {
+
+            log('window.initInnerFrame(identityLoginURL)', identityLoginURL);
+
+    // TODO: Do we still need this? Don't think so.
+    //        localStorage.innerFrameURL = innerFrameURL;
+
+            generateInnerFrame(identityLoginURL);
+
+            return true;
+        }
+
+
+        /**
+         * Inner Frame API - These methods get called by the page loaded in the inner frame.
+         */
+        window.addEventListener("message", function (event) {
+            try {
+                var message = JSON.parse(event.data);
+                log('window.addEventListener("message")', message);
+
+                if (message.request) {
+                    if (message.request.$handler === "identity") {
+
+                        // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessWindowRequest
+                        if (message.request.$method === "identity-access-window") {
+                            showTools("ready");
+                            if (message.request.browser.visibility) {
+                                showInnerFrame();
+                            } else {
+                                hideInnerFrame();
+                            }
+                            return sendMessageToInnerFrame({
+                                "result": {
+                                    "$domain": message.request.$domain,
+                                    "$appid": message.request.$appid,
+                                    "$id": message.request.$id,
+                                    "$handler": "identity",
+                                    "$method": "identity-access-window",
+                                    "$timestamp": Date.now()/1000
+                                }
+                            });
+                        }
+                    }
+                } else
+                if (message.notify) {
+                    if (message.notify.$handler === "identity") {
+                        // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessCompleteNotification
+                        if (message.notify.$method === "identity-access-complete") {
+                            return showTools("loggedin", {
+                                identity: JSON.stringify(message.notify.identity, null, 4)
+                            });
+                        }
+                    }
+                } else
+                if (message.result) {
+                    if (message.result.$handler === "identity") {
+                        // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessLockboxUpdateRequest
+                        if (message.result.$method === "identity-access-lockbox-update") {
+                            return showTools("loggedin", {
+                                result: "OK"
+                            });
+                        } else
+                        // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#IdentityServiceRequestsAnnex-IdentityAccessRolodexCredentialsGetRequest
+                        if (message.result.$method === "identity-access-rolodex-credentials-get") {
+                            return showTools("loggedin", {
+                                result: JSON.stringify(message.result.rolodex, null, 4)
+                            });
+                        }
+                    }
+                }
+
+            } catch (err) {
+                log("ERROR", 'window.addEventListener("message")', err.stack);
+                console.error("ERROR", 'window.addEventListener("message")', err.stack);
+            }
+        }, false);
+
+
+        /**
+         * Init
+         */
+
+        window.init = function () {
+            log('init()');
+
+            initTools();
+
+            if (/trigger=login/.test(window.location.search)) {
+                window.initInnerFrame(getUrlFor("/login.php"));
+            }
+        }
+
+
+    })(window));
+    </script>
+</head>
+<body onload="init();">
+    <h1>Identity Provider Tests</h1>
+    <div id="tools"></div>
+    <div id="inner-frame" class="hidden"></div>
+</body>
+</html>

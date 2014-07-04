@@ -1,0 +1,52 @@
+
+HTML,
+BODY {
+	font-family: Helvetica;
+	padding: 0px;
+	margin: 0px;
+    background-color: rgb(65, 123, 134);
+}
+
+h1 {
+	margin: 10px;
+	font-size: 25px;
+}
+
+#tools {
+	border: 1px solid #000000;
+	padding: 5px;
+	margin: 5px;
+}
+
+#tools > DIV {
+	display: block;
+}
+
+#tools > DIV > H2 {
+	margin: 0px;
+	font-size: 20px;
+}
+
+.hidden {
+	display: none !important;
+}
+
+#inner-frame {
+	border: 1px solid #000000;
+	padding: 5px;
+	margin: 5px;
+	width: 95%;
+	height: 400px;
+}
+
+#inner-frame > IFRAME {
+	border: 0px;
+	width: 100%;
+	height: 100%;
+	background-color: #FFFFFF;
+}
+
+#inner-frame.simulate-hidden {
+	border: 5px dashed #ff0000;
+}
+

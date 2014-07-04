@@ -1,0 +1,17 @@
+
+<h1>oAuth Test Client</h1>
+
+{{? view.authorized }}
+
+	<p>You are successfully logged in as: <b>{{=view.user.username}}</b></p>
+
+	<a href="/logout">Logout</a>
+
+{{??}}
+
+	<p>Clicking on login below will take you to your configured oAuth server at:<br/>
+	<b>{{=view.hcs.config.identity.oauth.authorizationURL}}</b></p>
+
+	<a href="/login">Login</a>
+
+{{?}}
