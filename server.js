@@ -8,6 +8,7 @@ const PASSPORT = require("passport");
 const PASSPORT_OAUTH2 = require("passport-oauth2");
 const REQUEST = require("request");
 const CRYPTO = require("crypto");
+const UTILS = require("op-primitives-server-nodejs/utils");
 
 const MODEL_IDENTITY_LOOKUP = require("./models/identity-lookup");
 
@@ -21,7 +22,7 @@ var AUTH_CONFIG = integrationConfig.identity.oauth;
 
 var passport = null
 
-require("./server-prototype").for(module, __dirname, function(app, serviceConfig, HELPERS) {
+require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, function(app, serviceConfig, HELPERS) {
 
 	passport = new PASSPORT.Passport();
 	passport.serializeUser(function(user, done) {
@@ -201,9 +202,9 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
                         clientAuthenticationToken: request.clientAuthenticationToken,
                         callbackURL: request.callbackURL,
                         identity: request.identity,
-                        serverAuthenticationToken: generateId(),
+                        serverAuthenticationToken: UTILS.generateId(),
                         // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
-                        reloginKey: generateId()
+                        reloginKey: UTILS.generateId()
                     };
 
                     return respond({
@@ -237,8 +238,8 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
 
                     // TODO: Instead of storing this on the session it should be stored in DB by access token. [Security]
                     req.session.credentials = {
-                        "accessToken": generateId(),
-                        "accessSecret": generateId(),
+                        "accessToken": UTILS.generateId(),
+                        "accessSecret": UTILS.generateId(),
                         "accessSecretExpires": Date.now() + 60 * 60 * 24 * 1000,
                         "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
                     };
@@ -306,7 +307,7 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
                                 })
                                 */
                                 var tokenInfo = {
-                                    service: URL.parse(AUTH_CONFIG.authorizationURL).host,
+                                    service: URL.parse(AUTH_CONFIG.authorizationURL).hostname,
                                     identifier: req.session.user.id,
                                     consumer_key: AUTH_CONFIG.clientID,
                                     consumer_secret: AUTH_CONFIG.clientSecret,
@@ -315,20 +316,22 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
                                 var tokenSecret = integrationConfig.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
                                     if (err) return callback(err);
-
-                                    var iv = CRYPTO.createHash("md5");
-                                    iv.update(buffer.toString("hex"));
-                                    iv = iv.digest();
-
-                                    var secretHash = CRYPTO.createHash("sha256");
-                                    secretHash.update(tokenSecret);
-                                    secretHash = secretHash.digest();
-
-                                    var cipher = CRYPTO.createCipheriv('aes-256-cfb', secretHash, iv);
-                                    var encryptdata = cipher.update(JSON.stringify(tokenInfo));
-                                    encryptdata += cipher.final();
-
-                                    return callback(null, new Buffer(iv, 'binary').toString('hex') + "-" + new Buffer(encryptdata, 'binary').toString('hex'));
+                                    var token = null;
+                                    try {
+                                        var iv = CRYPTO.createHash("md5");
+                                        iv.update(buffer.toString("hex"));
+                                        iv = iv.digest();
+                                        var secretHash = CRYPTO.createHash("sha256");
+                                        secretHash.update(tokenSecret);
+                                        secretHash = secretHash.digest();
+                                        var cipher = CRYPTO.createCipheriv('aes-256-cbc', secretHash, iv);
+                                        var encryptdata = cipher.update(JSON.stringify(tokenInfo), 'utf8', 'binary');
+                                        encryptdata += cipher.final('binary');
+                                        token = iv.toString('hex') + "-" + new Buffer(encryptdata, 'binary').toString('base64');
+                                    } catch(err) {
+                                        return callback(err);
+                                    }
+                                    return callback(null, token);
                                 });
                             }
 
@@ -442,9 +445,4 @@ require("./server-prototype").for(module, __dirname, function(app, serviceConfig
     });
 
 });
-
-
-function generateId () {
-    return parseInt(CRYPTO.randomBytes(8).toString('hex'), 16).toString(36) + "-" + Date.now().toString(36);
-}
 

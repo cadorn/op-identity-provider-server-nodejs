@@ -66,10 +66,10 @@
             return iframe[0].contentWindow.postMessage(message, url.replace(/$(https?:\/\/[^\/]+)/, "$1"));
         }
 
-        function callIdentityProvider(request, callback) {
-            log("callIdentityProvider(request)", request);
+        function callServer (url, request, callback) {
+            log("callServer(request)", request);
             return $.ajax({
-                url : "/api.php",
+                url : url,
                 type : "POST",
                 data : JSON.stringify({
                     "request": request
@@ -77,13 +77,13 @@
                 contentType: "application/json",
                 // callback handler that will be called on success
                 success : function(response, textStatus, jqXHR) {
-                    log("callIdentityProvider() - success", response);
+                    log("callServer() - success", response);
                     var result = null;
                     if (typeof response === "string") {
                         try {
                             result = JSON.parse(response).result;
                         } catch (err) {
-                            log("callIdentityProvider() - success", response);
+                            log("callServer() - success", response);
                             return callback(new Error("Error '" + err.message + "' parsing JSON response!"));
                         }
                     } else {
@@ -92,16 +92,24 @@
                     if (result.error) {
                         // result.error.reason.message
                         // result.error.reason.$id
-                        log("callIdentityProvider() - error", result.error.reason);
+                        log("callServer() - error", result.error.reason);
                     }
                     return callback(null, result);
                 },
                 // callback handler that will be called on error
                 error : function(jqXHR, textStatus, errorThrown) {
-                    log("callIdentityProvider() - error", textStatus);
-                    return callback(new Error("Error '" + textStatus + "' calling identity provider API"));
+                    log("callServer() - error", textStatus);
+                    return callback(new Error("Error '" + textStatus + "' calling '" + url + "'"));
                 }
             });
+        }
+
+        function callIdentityProvider (request, callback) {
+            return callServer("/api.php", request, callback);
+        }
+
+        function callRolodex (request, callback) {
+            return callServer("//" + window.location.hostname + ":5004/api", request, callback);
         }
 
         function getUrlFor(uri) {
@@ -144,7 +152,7 @@
 
             log('initTools()');
 
-            function makeIdentityAccess(invalid) {
+            function makeIdentityAccess (invalid) {
                 var identityCredentials = JSON.parse($("#" + TOOLS_CONTAINER_ID + "-loggedin > [name=\"identity\"]").html());
                 var identityAccess = {
                     "accessToken": identityCredentials.accessToken,
@@ -158,6 +166,20 @@
                     identityAccess.accessToken += "-invalid";
                 }
                 return identityAccess;
+            }
+
+            function makeRolodexAccess (invalid) {
+                var rolodexCredentials = JSON.parse($("#" + TOOLS_CONTAINER_ID + "-rolodex > [name=\"rolodex-access\"]").html()).rolodex;
+                var rolodexAccess = {
+                    "accessToken": rolodexCredentials.accessToken,
+                    // TODO: Calculare proof instead of using secret. [Security]
+                    "accessSecretProof": rolodexCredentials.accessSecret,
+                    "accessSecretProofExpires": rolodexCredentials.accessSecretExpires,
+                }
+                if (invalid) {
+                    rolodexAccess.accessToken += "-invalid";
+                }
+                return rolodexAccess;
             }
 
             visibleStages = [
@@ -580,6 +602,101 @@
 
                 button = $('<pre name="result"></pre>');
                 button.appendTo(section);
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-rolodex-init" class="hidden"><h2>App API after Rolodex Credentials Get</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<pre name="rolodex-token"></pre>');
+                button.appendTo(section);
+
+                button = $('<button>Rolodex Access</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#RolodexServiceRequests-RolodexAccessRequest
+                    var rolodexCredentials = JSON.parse($("#" + TOOLS_CONTAINER_ID + "-rolodex-init > [name=\"rolodex-token\"]").html());
+                    return callRolodex({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "rolodex",
+                        "$id": generateId(),
+                        "$method": "rolodex-access",
+                        "clientNonce": "na",
+                        "identity": makeIdentityAccess(),
+                        "rolodex": rolodexCredentials,
+                        "agent": {
+                            "userAgent": "hookflash/1.0.1001a (iOS/iPad)",
+                            "name": "hookflash",
+                            "image": "https://hookflash.com/brandsquare.png",
+                            "url": "https://hookflash.com/agentinfo/"
+                        },
+                        "grant": {
+                            "$id": "de0c8c10d692bc91c1a551f57a50d2f97ef67543"
+                        }
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("rolodex-init", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("rolodex", {
+                                "rolodex-access": JSON.stringify({
+                                    rolodex: result.rolodex,
+                                    namespaceGrantChallenge: result.namespaceGrantChallenge || null
+                                }, null, 4)
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<pre name="result"></pre>');
+                button.appendTo(section);
+
+            section = $('<div id="' + TOOLS_CONTAINER_ID + '-rolodex" class="hidden"><h2>App API after Rolodex Access</h2></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                button = $('<pre name="rolodex-access"></pre>');
+                button.appendTo(section);
+
+                button = $('<button>Grant Challenge</button>');
+                button.click(function() {
+console.log("TODO: Implement!");
+                });
+                button.appendTo(section);
+
+                button = $('<button>Contacts Get</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#RolodexServiceRequests-RolodexContactsGetRequest
+                    var rolodex = makeRolodexAccess();
+                    rolodex.version = "";
+                    rolodex.refresh = false;
+                    return callRolodex({
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "rolodex",
+                        "$id": generateId(),
+                        "$method": "rolodex-contacts-get",
+                        "clientNonce": "na",
+                        "rolodex": rolodex
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("rolodex", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("rolodex", {
+                                result: JSON.stringify({
+                                    rolodex: result.rolodex,
+                                    identities: result.identities || null
+                                }, null, 4)
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<pre name="result"></pre>');
+                button.appendTo(section);
+
         }
 
         var resultTimeouts = {};
@@ -603,6 +720,7 @@
                         clearTimeout(resultTimeouts[stage]);
                     }
                     resultTimeouts[stage] = setTimeout(function() {
+                        delete lastToolsData[stage][name];
                         $("#" + TOOLS_CONTAINER_ID + "-" + stage + " > [name=\"" + name + "\"]").html("");
                     }, 3 * 1000);
                 }
@@ -683,14 +801,14 @@
                         } else
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#IdentityServiceRequestsAnnex-IdentityAccessRolodexCredentialsGetRequest
                         if (message.result.$method === "identity-access-rolodex-credentials-get") {
-                            var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
                             if (message.result.error) {
+                                var stage = (visibleStages.indexOf("loggedin") !== -1) ? "loggedin" : "init";
                                 return showTools(stage, {
                                     result: JSON.stringify(message.result.error, null, 4)
                                 });
                             } else {
-                                return showTools(stage, {
-                                    result: JSON.stringify(message.result.rolodex, null, 4)
+                                return showTools("rolodex-init", {
+                                    "rolodex-token": JSON.stringify(message.result.rolodex, null, 4)
                                 });
                             }
                         }
