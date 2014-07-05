@@ -232,9 +232,6 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     if (req.session.login.identity.type !== request.identity.type) {
                         return next(new Error("identity.type does not match"));
                     }
-                    if (req.session.login.identity.base !== request.identity.base) {
-                        return next(new Error("identity.base does not match"));
-                    }
 
                     // TODO: Instead of storing this on the session it should be stored in DB by access token. [Security]
                     req.session.credentials = {

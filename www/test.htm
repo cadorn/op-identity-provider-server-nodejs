@@ -12,6 +12,7 @@
         const HCS_IDENTITY_DOMAIN = "{{=view.hcs.config.identity.domain}}";
         const LOGGER_HOST = "{{=view.hcs.config.logger.host}}";
         const OAUTH_LOGOUT_URL = "{{=view.hcs.config.identity.oauth.logoutURL}}";
+        const HCS_PROVIDER_DOMAIN = "{{=view.hcs.config.identity.oauth.authorizationURL}}".replace(/^https?:\/\/([^:\/]+)(?::\d+)?\/.+$/, "$1");
 
 
         /**
@@ -298,7 +299,7 @@
                         "nonce": "na",
                         "lockbox": {
                             "$id": generateId(),
-                            "domain": HCS_IDENTITY_DOMAIN,
+                            "domain": HCS_PROVIDER_DOMAIN,
                             "accessToken": generateId(),
                             "accessSecretProof": generateId(),
                             "accessSecretProofExpires": Date.now() + 60 * 60 * 24 * 1000
@@ -343,8 +344,8 @@
                                 "url": "www.openpeer.org"
                             },
                             "identity": {
-                                "base": "identity://" + HCS_IDENTITY_DOMAIN + "/",
-                                "provider": HCS_IDENTITY_DOMAIN
+                                "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
+                                "provider": HCS_PROVIDER_DOMAIN
                             },
                             "browser": {
                                 "visibility": "visible-on-demand",
