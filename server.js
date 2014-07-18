@@ -149,7 +149,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 "$id": request.$id,
                 "$handler": request.$handler,
                 "$method": request.$method,
-                "$epoch": Date.now()
+                "$epoch": Math.floor(Date.now() / 1000)
             };
             for (var name in data) {
                 result[name] = data[name];
@@ -237,7 +237,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     req.session.credentials = {
                         "accessToken": UTILS.generateId(),
                         "accessSecret": UTILS.generateId(),
-                        "accessSecretExpires": Date.now() + 60 * 60 * 24 * 1000,
+                        "accessSecretExpires": Math.floor(Date.now()/1000 + 60 * 60 * 24),
                         "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
                     };
 
