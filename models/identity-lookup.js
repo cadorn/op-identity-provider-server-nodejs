@@ -1,5 +1,12 @@
 
 const WAITFOR = require("waitfor");
+const CRYPTO = require('crypto');
+
+
+
+function randomString(length) {
+  return CRYPTO.randomBytes(length / 2).toString('hex');
+}
 
 
 // TODO: Store in DB instead of memory.
@@ -47,7 +54,7 @@ exports.check = function (providers, callback) {
 					if (identity) {
 						identities.push({
 							uri: uri,
-							updated: identity.updatedOn
+							updated: Math.floor(identity.updatedOn/1000)
 						});
 					}
 					return callback(null);
@@ -65,33 +72,38 @@ exports.lookup = function (providers, callback) {
 		if (err) return callback(err);
 		return callback(null, identities);
 	});
-	providers.forEach(function (provider) {
-		return provider.identities.split(provider.separator || ",").forEach(function (identity) {
-			return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
-				return get(uri, function(err, identity) {
-					if (err) return callback(err);
-					if (identity) {
+	if (providers) {
+		providers.forEach(function (provider) {
+			return provider.identities.split(provider.separator || ",").forEach(function (identity) {
+				return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
+					return get(uri, function(err, identity) {
+						if (err) return callback(err);
+						if (identity) {
 
-						var info = JSON.parse(JSON.stringify(identity.identity));
-						info.updated = identity.updatedOn;
-						info.expires = identity.expiresOn;
+							var info = JSON.parse(JSON.stringify(identity.identity));
+							info.updated = Math.floor(identity.updatedOn/1000);
+							info.expires = Math.floor(identity.expiresOn/1000);
 
-						info.identityProofBundle = {
-							identityProof: {
-								$id: "id",
-								contactProofBundle: identity.contactProofBundle
-							},
-							signature: {}
+							var identityProofId = randomString(32);
+							info.identityProofBundle = {
+								identityProof: {
+									$id: identityProofId,
+									contactProofBundle: identity.contactProofBundle
+								},
+								signature: {
+									reference: "#" + identityProofId
+								}
+							}
+//							delete identity.contactProofBundle;
+
+							identities.push(info);
 						}
-						delete identity.contactProofBundle;
-
-						identities.push(info);
-					}
-					return callback(null);
+						return callback(null);
+					});
 				});
 			});
 		});
-	});
+	}
 	return waitfor();
 }
 

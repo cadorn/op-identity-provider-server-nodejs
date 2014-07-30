@@ -111,7 +111,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
 
     // @see https://github.com/openpeer/hcs-system/blob/master/architecture/servers/HCS%20protocol%20-%20Identity%20Provider.md#44-social-provider-authentication-request
-    app.get(/^\/login.php$/, function (req, res) {
+    app.get(/^\/login.html$/, function (req, res) {
         return FS.readFile(serviceConfig.config.loginTemplatePath, "utf8", function(err, template) {
 
             template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, integrationConfig.logger.host);
@@ -136,12 +136,17 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
     });
 
 
-    app.post(/^\/api.php$/, function (req, res, next) {
+    // TODO: Store active tokens in database.
+    var activeTokens = {};
+
+    function processRequest(req, res, next) {
 
         var request = req.body.request || null;
         if (!request) {
             return next(new Error("Request did not contain a 'request' property!"));
         }
+
+        console.log("Request: " + JSON.stringify(request, null, 4));
 
         function respond (data) {
             var result = {
@@ -154,6 +159,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             for (var name in data) {
                 result[name] = data[name];
             }
+            console.log("Result: " + JSON.stringify(result, null, 4));
             var payload = JSON.stringify({
                 result: result
             }, null, 4);
@@ -184,6 +190,14 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 } else {
                     return callback(null, true);
                 }
+            } else
+            if (
+                activeTokens[request.identity.accessToken] &&
+                request.identity.uri === activeTokens[request.identity.accessToken].credentials.uri
+                // TODO: Verify access proof.
+            ) {
+                req.session = activeTokens[request.identity.accessToken];
+                return callback(null, true);
             }
             return callback(null, false);
         }
@@ -198,19 +212,45 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     ASSERT.equal(typeof request.callbackURL, "string", "'request.callbackURL' must be set!");
                     ASSERT.equal(typeof request.identity.type, "string", "'request.identity.type' must be set!");
 
-                    req.session.login = {
-                        clientAuthenticationToken: request.clientAuthenticationToken,
-                        callbackURL: request.callbackURL,
-                        identity: request.identity,
-                        serverAuthenticationToken: UTILS.generateId(),
-                        // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
-                        reloginKey: UTILS.generateId()
-                    };
+console.log("request.identity.reloginKey", request.identity.reloginKey);
+console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
+                    if (
+                        request.identity.reloginKey &&
+                        activeTokens[request.identity.reloginKey]
+                    ) {
+                        console.log("Login using relogin key: " + request.identity.reloginKey);
 
-                    return respond({
-                        "providerRedirectURL": "/login",
-                        "serverAuthenticationToken": req.session.login.serverAuthenticationToken
-                    });
+console.log("req.cookies.sid", req.cookies.sid);
+console.log("req.sessionID", req.sessionID);
+console.log("req.session", req.session);
+
+                        for (var name in activeTokens[request.identity.reloginKey]) {
+                            req.session[name] = activeTokens[request.identity.reloginKey][name];
+                        }
+
+                        req.session.login.clientAuthenticationToken = request.clientAuthenticationToken;
+                        req.session.login.callbackURL = request.callbackURL;
+
+console.log("req.session2", req.session);
+
+                        return respond({
+                            "serverAuthenticationToken": req.session.login.serverAuthenticationToken
+                        });
+                    } else {
+                        req.session.login = {
+                            clientAuthenticationToken: request.clientAuthenticationToken,
+                            callbackURL: request.callbackURL,
+                            identity: request.identity,
+                            serverAuthenticationToken: UTILS.generateId(),
+                            // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
+                            reloginKey: UTILS.generateId()
+                        };
+
+                        return respond({
+                            "providerRedirectURL": "/login",
+                            "serverAuthenticationToken": req.session.login.serverAuthenticationToken
+                        });
+                    }
                 } else
                 // @see https://github.com/openpeer/hcs-system/blob/master/architecture/servers/HCS%20protocol%20-%20Identity%20Provider.md#456-example---social-login
                 if (request.$method === "login") {
@@ -220,17 +260,41 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     ASSERT.equal(typeof request.identity.type, "string", "'request.identity.type' must be set!");
                     ASSERT.equal(typeof request.identity.base, "string", "'request.identity.base' must be set!");
 
+console.log("req.cookies.sid", req.cookies.sid);
+console.log("req.sessionID", req.sessionID);
+console.log("req.session", req.session);
+
                     if (!req.session.login) {
-                        return next(new Error("No active login session"));
+                        return respond({
+                            error: {
+                                $id: 403,
+                                reason: "No active login session"
+                            }
+                        });
                     }
                     if (req.session.login.clientAuthenticationToken !== request.proof.clientAuthenticationToken) {
-                        return next(new Error("clientAuthenticationToken does not match"));
+                        return respond({
+                            error: {
+                                $id: 403,
+                                reason: "clientAuthenticationToken does not match"
+                            }
+                        });
                     }
                     if (req.session.login.serverAuthenticationToken !== request.proof.serverAuthenticationToken) {
-                        return next(new Error("serverAuthenticationToken does not match"));
+                        return respond({
+                            error: {
+                                $id: 403,
+                                reason: "serverAuthenticationToken does not match"
+                            }
+                        });
                     }
                     if (req.session.login.identity.type !== request.identity.type) {
-                        return next(new Error("identity.type does not match"));
+                        return respond({
+                            error: {
+                                $id: 403,
+                                reason: "identity.type does not match"
+                            }
+                        });
                     }
 
                     // TODO: Instead of storing this on the session it should be stored in DB by access token. [Security]
@@ -240,6 +304,15 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                         "accessSecretExpires": Math.floor(Date.now()/1000 + 60 * 60 * 24),
                         "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
                     };
+
+                    // NOTE: For now instead of resetting the login key we are going to use
+                    //       the existing one if there is one
+                    //req.session.login.reloginKey = req.session.credentials.accessToken;
+                    if (req.session.login.reloginKey) {
+                        activeTokens[req.session.login.reloginKey] = req.session;
+                    }
+
+                    activeTokens[req.session.credentials.accessToken] = req.session;
 
                     return respond({
                         "identity": {
@@ -413,6 +486,11 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             if (request.$handler === "identity-lookup") {
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupCheckRequest
                 if (request.$method === "identity-lookup-check") {
+                    if (!Array.isArray(request.providers.provider)) {
+                        request.providers.provider = [
+                            request.providers.provider
+                        ];
+                    }
                     return MODEL_IDENTITY_LOOKUP.check(request.providers.provider, function (err, identities) {
                         if (err) return next(err);
                         return respond({
@@ -424,6 +502,11 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 } else
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupRequest
                 if (request.$method === "identity-lookup") {
+                    if (!Array.isArray(request.providers.provider)) {
+                        request.providers.provider = [
+                            request.providers.provider
+                        ];
+                    }
                     return MODEL_IDENTITY_LOOKUP.lookup(request.providers.provider, function (err, identities) {
                         if (err) return next(err);
                         return respond({
@@ -439,7 +522,18 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         }
 
         return next();
-    });
+    }
+
+    app.post(/^\/api$/, processRequest);
+
+    app.post(/^\/oauth-provider-authentication$/, processRequest);
+    app.post(/^\/login$/, processRequest);
+    app.post(/^\/lockbox-half-key-store$/, processRequest);
+    app.post(/^\/identity-access-rolodex-credentials-get$/, processRequest);
+    app.post(/^\/identity-access-validate$/, processRequest);
+    app.post(/^\/identity-lookup-update$/, processRequest);
+    app.post(/^\/identity-lookup-check$/, processRequest);
+    app.post(/^\/identity-lookup$/, processRequest);
 
 });
 

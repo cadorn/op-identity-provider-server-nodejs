@@ -219,7 +219,7 @@
 
                 button = $('<button>Trigger OpenPeer Login</button>');
                 button.click(function() {
-                    window.initInnerFrame(getUrlFor("/login.php"));
+                    window.initInnerFrame(getUrlFor("/login.html"));
                 });
                 button.appendTo(section);
 
@@ -329,32 +329,39 @@
                 button = $('<button>Access Start</button>');
                 button.click(function() {
 
+                    var notify = {
+                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "identity",
+                        "$id": generateId(),
+                        "$method": "identity-access-start",
+                        "agent": {
+                            "userAgent": "OpenPeerSampleApp/1.0 (iPhone OS 6.1.2;iPad) HOPID/1.0 (777)",
+                            "name": "OpenPeerSampleApp",
+                            "image": "http://hookflash.com/wp-content/themes/CleanSpace/images/logo.png",
+                            "url": "www.openpeer.org"
+                        },
+                        "identity": {
+                            "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
+                            "provider": HCS_PROVIDER_DOMAIN
+                        },
+                        "browser": {
+                            "visibility": "visible-on-demand",
+                            "popup": "deny",
+                            "outerFrameURL": addQueryParameters(window.location.href, {
+                                trigger: "login"
+                            })
+                        }
+                    };
+
+                    var relogin = $("#" + TOOLS_CONTAINER_ID + "-ready > [name=\"relogin\"]").html();
+                    if (relogin && (relogin = JSON.parse(relogin)) && relogin.reloginKey) {
+                        notify.identity.reloginKey = relogin.reloginKey;
+                    }
+
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessStartNotification
                     return sendMessageToInnerFrame({
-                        "notify": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
-                            "$appid": "com.hookflash.OpenPeerSampleApp",
-                            "$handler": "identity",
-                            "$id": generateId(),
-                            "$method": "identity-access-start",
-                            "agent": {
-                                "userAgent": "OpenPeerSampleApp/1.0 (iPhone OS 6.1.2;iPad) HOPID/1.0 (777)",
-                                "name": "OpenPeerSampleApp",
-                                "image": "http://hookflash.com/wp-content/themes/CleanSpace/images/logo.png",
-                                "url": "www.openpeer.org"
-                            },
-                            "identity": {
-                                "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
-                                "provider": HCS_PROVIDER_DOMAIN
-                            },
-                            "browser": {
-                                "visibility": "visible-on-demand",
-                                "popup": "deny",
-                                "outerFrameURL": addQueryParameters(window.location.href, {
-                                    trigger: "login"
-                                })
-                            }
-                        }
+                        "notify": notify
                     });
                 });
                 button.appendTo(section);
@@ -378,6 +385,9 @@
                         }
                     });
                 });
+                button.appendTo(section);
+
+                button = $('<pre name="relogin"></pre>');
                 button.appendTo(section);
 
             section = $('<div id="' + TOOLS_CONTAINER_ID + '-loggedin" class="hidden"><h2>App API after login complete</h2></div>');
@@ -779,6 +789,11 @@ console.log("TODO: Implement!");
                     if (message.notify.$handler === "identity") {
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessCompleteNotification
                         if (message.notify.$method === "identity-access-complete") {
+                            showTools("ready", {
+                                relogin: JSON.stringify({
+                                    reloginKey: message.notify.identity.reloginKey
+                                }, null, 4)
+                            });
                             return showTools("loggedin", {
                                 identity: JSON.stringify(message.notify.identity, null, 4)
                             });
@@ -833,7 +848,7 @@ console.log("TODO: Implement!");
             initTools();
 
             if (/trigger=login/.test(window.location.search)) {
-                window.initInnerFrame(getUrlFor("/login.php"));
+                window.initInnerFrame(getUrlFor("/login.html"));
             }
         }
 
