@@ -69,9 +69,11 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
     			authorized: false
     		};
     	}
+/*        
         res.view.hcs = {
             config: integrationConfig
         };
+*/
     	return next();
     });
 
@@ -114,10 +116,10 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
     app.get(/^\/login.html$/, function (req, res) {
         return FS.readFile(serviceConfig.config.loginTemplatePath, "utf8", function(err, template) {
 
-            template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, integrationConfig.logger.host);
+            template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, serviceConfig.config.logger.host);
             template = template.replace(/\{\{\s*config.ASSET_PATH\s*\}\}/g, "/assets");
-            template = template.replace(/\{\{\s*config.HF_PASSWORD1_BASEURI\s*\}\}/g, integrationConfig.hcs.password1.uri);
-            template = template.replace(/\{\{\s*config.HF_PASSWORD2_BASEURI\s*\}\}/g, integrationConfig.hcs.password2.uri);
+            template = template.replace(/\{\{\s*config.HF_PASSWORD1_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password1.uri);
+            template = template.replace(/\{\{\s*config.HF_PASSWORD2_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password2.uri);
             template = template.replace(/\{\{\s*config.SESSION_identityServiceAuthenticationURL\s*\}\}/g, "");
 
             res.writeHead(200, {
@@ -383,7 +385,7 @@ console.log("req.session", req.session);
                                     consumer_secret: AUTH_CONFIG.clientSecret,
                                     token: req.session.user.accessToken
                                 };
-                                var tokenSecret = integrationConfig.rolodex.sharedSecret;
+                                var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
                                     if (err) return callback(err);
                                     var token = null;
