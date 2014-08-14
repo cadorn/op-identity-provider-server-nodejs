@@ -13,16 +13,37 @@ const UTILS = require("op-primitives-server-nodejs/utils");
 const MODEL_IDENTITY_LOOKUP = require("./models/identity-lookup");
 
 
-var hcsConfigBasePath = "/opt/data/config2";
-var hcsIntegrationConfigPath = PATH.join(hcsConfigBasePath, "hcs-integration.json");
-
-var integrationConfig = JSON.parse(FS.readFileSync(hcsIntegrationConfigPath));
-var AUTH_CONFIG = integrationConfig.identity.oauth;
-
-
 var passport = null
 
 require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, function(app, serviceConfig, HELPERS) {
+
+
+    function loadConfiguration(host, callback) {
+        var m = host.match(/^(.+?)-wellknown\./);
+        if (!m) {
+            var err = new Error("Could not parse host");
+            err.code = 404;
+            return callback(err);
+        }
+        var domain = m[1].replace(/-{2}/g, "__DASH__").replace(/-/g, ".").replace(/__DASH__/g, "-");
+        return HELPERS.API.REQUEST({
+            url: "http://" + serviceConfig.config.hcs.accounts.hostname + "/idprovider/" + domain + "/config.json?token=" + serviceConfig.config.hcs.accounts.token,
+            json: true
+        }, function (err, response, body) {
+            if (err) return callback(err);
+            if (!body) {
+                var err = new Error("Domain not found");
+                err.code = 404;
+                return callback(err);
+            }
+            return callback(null, {
+                host: host,
+                domain: domain,
+                config: JSON.parse(body.configuration),
+                bootstrapper: body.bootstrapper
+            });
+        });
+    }
 
 	passport = new PASSPORT.Passport();
 	passport.serializeUser(function(user, done) {
@@ -31,8 +52,14 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 	passport.deserializeUser(function(obj, done) {
 	    return done(null, obj);
 	});
-    AUTH_CONFIG.callbackURL = serviceConfig.config.identity.oauth.callbackURL;
-	var oauthStrategy = new PASSPORT_OAUTH2.Strategy(AUTH_CONFIG, function(accessToken, refreshToken, profile, done) {
+	var oauthStrategy = new PASSPORT_OAUTH2.Strategy({
+        callbackURL: serviceConfig.config.identity.oauth.callbackURL,
+        // NOTE: These values get set dynamically based on the request $domain upon oauth authorization.
+        authorizationURL: "tmp",
+        tokenURL: "tmp",
+        clientID: "tmp",
+        clientSecret: "tmp"
+    }, function(accessToken, refreshToken, profile, done) {
 	    return done(null, {
             accessToken: accessToken,
             refreshToken: refreshToken,
@@ -42,7 +69,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 	  }
 	);
     oauthStrategy.userProfile = function(accessToken, callback) {
-        return REQUEST.get(AUTH_CONFIG.profileURL + "?access_token=" + accessToken, function(err, res, body) {
+        return REQUEST.get(passport._strategies.oauth2._profileURL + "?access_token=" + accessToken, function(err, res, body) {
             if (err) return callback(err);
             var profile = null;
             try {
@@ -69,15 +96,64 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
     			authorized: false
     		};
     	}
-/*        
+        return next();
+    });
+
+    app.get("/test", function(req, res, next) {
         res.view.hcs = {
-            config: integrationConfig
+            config: {
+                "logger": {
+                    "host": "logger-v1-rel-lespaulinst2-i.hcs.io"
+                },
+                "hcs": {
+                    "password1": {
+                        "uri": "http://hfservice-v1-rel-lespaulinst2-i.hcs.io/password1"
+                    },
+                    "password2": {
+                        "uri": "http://hfservice-v1-rel-lespaulinst2-i.hcs.io/password2"
+                    }
+                },
+                "rolodex": {
+                    "sharedSecret": "kjdfkj82398jkwefkjwkjef892398welkefklewkflo234230ioewklw"
+                },
+                "identity": {
+                    "domain": serviceConfig.config.test.identity.domain,
+                    "oauth": {
+                        "logoutURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/logout",
+                        "authorizationURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/authorize",
+                        "tokenURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/token",
+                        "clientID": "hcs-stack-int~test.oauth.client",
+                        "clientSecret": "hcs-stack-int~test.oauth.client~secret",
+                        "profileURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/profile",
+                        "publicProfileURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/profile/{id}",
+                        "publicVcardProfileURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/profile/{id}?format=vcard",
+                        "publicFeedURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/profile/{id}/feed",
+                        "publicAvatarURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":81/profile/{id}/avatar"
+                    }
+                },
+                "contacts": {
+                    "contactsURL": "http://" + serviceConfig.config.test.identity.oauth.hostname + ":82/contacts"
+                }
+            }
         };
-*/
     	return next();
     });
 
+
+    function updateAuthConfig (req) {
+        if (!req.session.login) {
+            return;
+        }
+        passport._strategies.oauth2._oauth2._clientId = req.session.login.accountConfig.config.oauth.clientID;
+        passport._strategies.oauth2._oauth2._clientSecret = req.session.login.accountConfig.config.oauth.clientSecret;
+        passport._strategies.oauth2._oauth2._authorizeUrl = req.session.login.accountConfig.config.oauth.authorizationURL;
+        passport._strategies.oauth2._oauth2._accessTokenUrl = req.session.login.accountConfig.config.oauth.tokenURL;
+        passport._strategies.oauth2._key = "oauth2:" + URL.parse(req.session.login.accountConfig.config.oauth.authorizationURL).hostname;
+        passport._strategies.oauth2._profileURL = req.session.login.accountConfig.config.profile.profileURL;
+    }
+
 	app.get('/login', function(req, res, next) {
+        updateAuthConfig(req);
         req.logout();
         if (req.query && req.query.returnTo) {
             req.session.returnTo = req.query.returnTo;
@@ -85,7 +161,10 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         return next();
     }, passport.authenticate('oauth2'));
 
-    app.get('/oauth/callback', passport.authenticate('oauth2', {
+    app.get('/oauth/callback', function(req, res, next) {
+        updateAuthConfig(req);
+        return next();
+    }, passport.authenticate('oauth2', {
         failureRedirect: '/fail'
     }), function(req, res, next) {
         req.session.user = req.session.passport.user;
@@ -102,6 +181,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
     });
 
     app.get(/^\/logout$/, function (req, res) {
+        updateAuthConfig(req);
     	req.logout();
         delete req.session.user;
         delete req.session.authorized;
@@ -216,43 +296,49 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
 console.log("request.identity.reloginKey", request.identity.reloginKey);
 console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
-                    if (
-                        request.identity.reloginKey &&
-                        activeTokens[request.identity.reloginKey]
-                    ) {
-                        console.log("Login using relogin key: " + request.identity.reloginKey);
 
-console.log("req.cookies.sid", req.cookies.sid);
-console.log("req.sessionID", req.sessionID);
-console.log("req.session", req.session);
+                    return loadConfiguration(request.$domain, function (err, accountConfig) {
+                        if (err) return next(err);
 
-                        for (var name in activeTokens[request.identity.reloginKey]) {
-                            req.session[name] = activeTokens[request.identity.reloginKey][name];
+                        if (
+                            request.identity.reloginKey &&
+                            activeTokens[request.identity.reloginKey]
+                        ) {
+                            console.log("Login using relogin key: " + request.identity.reloginKey);
+
+    console.log("req.cookies.sid", req.cookies.sid);
+    console.log("req.sessionID", req.sessionID);
+    console.log("req.session", req.session);
+
+                            for (var name in activeTokens[request.identity.reloginKey]) {
+                                req.session[name] = activeTokens[request.identity.reloginKey][name];
+                            }
+
+                            req.session.login.clientAuthenticationToken = request.clientAuthenticationToken;
+                            req.session.login.callbackURL = request.callbackURL;
+
+    console.log("req.session2", req.session);
+
+                            return respond({
+                                "serverAuthenticationToken": req.session.login.serverAuthenticationToken
+                            });
+                        } else {
+                            req.session.login = {
+                                clientAuthenticationToken: request.clientAuthenticationToken,
+                                callbackURL: request.callbackURL,
+                                identity: request.identity,
+                                serverAuthenticationToken: UTILS.generateId(),
+                                // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
+                                reloginKey: UTILS.generateId(),
+                                accountConfig: accountConfig
+                            };
+
+                            return respond({
+                                "providerRedirectURL": "/login",
+                                "serverAuthenticationToken": req.session.login.serverAuthenticationToken
+                            });
                         }
-
-                        req.session.login.clientAuthenticationToken = request.clientAuthenticationToken;
-                        req.session.login.callbackURL = request.callbackURL;
-
-console.log("req.session2", req.session);
-
-                        return respond({
-                            "serverAuthenticationToken": req.session.login.serverAuthenticationToken
-                        });
-                    } else {
-                        req.session.login = {
-                            clientAuthenticationToken: request.clientAuthenticationToken,
-                            callbackURL: request.callbackURL,
-                            identity: request.identity,
-                            serverAuthenticationToken: UTILS.generateId(),
-                            // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
-                            reloginKey: UTILS.generateId()
-                        };
-
-                        return respond({
-                            "providerRedirectURL": "/login",
-                            "serverAuthenticationToken": req.session.login.serverAuthenticationToken
-                        });
-                    }
+                    });
                 } else
                 // @see https://github.com/openpeer/hcs-system/blob/master/architecture/servers/HCS%20protocol%20-%20Identity%20Provider.md#456-example---social-login
                 if (request.$method === "login") {
@@ -379,10 +465,10 @@ console.log("req.session", req.session);
                                 })
                                 */
                                 var tokenInfo = {
-                                    service: URL.parse(AUTH_CONFIG.authorizationURL).hostname,
+                                    service: URL.parse(req.session.login.accountConfig.config.oauth.authorizationURL).hostname,
                                     identifier: req.session.user.id,
-                                    consumer_key: AUTH_CONFIG.clientID,
-                                    consumer_secret: AUTH_CONFIG.clientSecret,
+                                    consumer_key: req.session.login.accountConfig.config.oauth.clientID,
+                                    consumer_secret: req.session.login.accountConfig.config.oauth.clientSecret,
                                     token: req.session.user.accessToken
                                 };
                                 var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
@@ -459,15 +545,15 @@ console.log("req.session", req.session);
 
                                 identity.name = "Username: " + req.session.user.id;
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                identity.profile = integrationConfig.identity.oauth.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.profile = req.session.login.accountConfig.config.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                identity.vprofile = integrationConfig.identity.oauth.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.vprofile = req.session.login.accountConfig.config.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                identity.feed = integrationConfig.identity.oauth.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.feed = req.session.login.accountConfig.config.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
                                 identity.avatars = {
                                     "avatar": {
-                                        "url": integrationConfig.identity.oauth.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                        "url": req.session.login.accountConfig.config.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
                                     }
                                 };
 
