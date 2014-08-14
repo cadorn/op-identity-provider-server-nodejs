@@ -848,7 +848,7 @@ console.log("TODO: Implement!");
             initTools();
 
             if (/trigger=login/.test(window.location.search)) {
-                window.initInnerFrame(getUrlFor("/login.html"));
+                window.initInnerFrame(getUrlFor("/login.html?reload=true"));
             }
         }
 
