@@ -557,12 +557,12 @@ console.log("req.session", req.session);
                                     }
                                 };
 
-                                return MODEL_IDENTITY_LOOKUP.create(identity, function (err) {
+                                return MODEL_IDENTITY_LOOKUP.create(res.r, identity, function (err) {
                                     if (err) return next(err);
                                     return respond({});
                                 });
                             } else {
-                                return MODEL_IDENTITY_LOOKUP.remove(request.identity, function (err) {
+                                return MODEL_IDENTITY_LOOKUP.remove(res.r, request.identity, function (err) {
                                     if (err) return next(err);
                                     return respond({});
                                 });
@@ -579,7 +579,7 @@ console.log("req.session", req.session);
                             request.providers.provider
                         ];
                     }
-                    return MODEL_IDENTITY_LOOKUP.check(request.providers.provider, function (err, identities) {
+                    return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, function (err, identities) {
                         if (err) return next(err);
                         return respond({
                             "identities": {
@@ -595,7 +595,7 @@ console.log("req.session", req.session);
                             request.providers.provider
                         ];
                     }
-                    return MODEL_IDENTITY_LOOKUP.lookup(request.providers.provider, function (err, identities) {
+                    return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, function (err, identities) {
                         if (err) return next(err);
                         return respond({
                             "identities": {

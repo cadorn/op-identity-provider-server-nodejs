@@ -2,6 +2,7 @@
 const WAITFOR = require("waitfor");
 const CRYPTO = require('crypto');
 
+const DB_NAME = "hcs_integration";
 
 
 function randomString(length) {
@@ -9,38 +10,58 @@ function randomString(length) {
 }
 
 
-// TODO: Store in DB instead of memory.
 
-var identities = {};
-
-function get (uri, callback) {
-	return callback(null, identities[uri] || null);
+function get (r, uri, callback) {
+	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
+        if (err) return callback(err);
+		return identitiesTable.get(uri).run(r.conn, function (err, result) {
+		    if (err) return callback(err);
+		    if (!result) {
+				return callback(null, null);
+		    }	
+			return callback(null, result.data);
+		});
+	});
 }
 
-function set (uri, data, callback) {
-	if (data === null) {
-		delete identities[uri];
-	} else {
-		identities[uri] = data;
-	}
-	return callback(null);	
+function set (r, uri, data, callback) {
+	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
+        if (err) return callback(err);
+		if (data === null) {
+			return identitiesTable.get(uri).delete().run(r.conn, function (err, result) {
+			    if (err) return callback(err);
+				return callback(null);
+			});
+		} else {
+			return identitiesTable.insert({
+			    id: uri,
+			    data: data
+			}, {
+			    upsert: true
+			}).run(r.conn, function (err, result) {
+			    if (err) return callback(err);
+				return callback(null);
+			});
+		}
+	});
 }
 
 
 
-exports.create = function (identity, callback) {
-	return set(identity.uri, {
+exports.create = function (r, identity, callback) {
+	console.log("create", identity.uri);
+	return set(r, identity.uri, {
 		updatedOn: Date.now(),
 		expiresOn: Date.now() + 60 * 60 * 24 * 1000,
 		identity: identity
 	}, callback);
 }
 
-exports.remove = function (identity, callback) {
-	return set(identity.uri, null, callback);
+exports.remove = function (r, identity, callback) {
+	return set(r, identity.uri, null, callback);
 }
 
-exports.check = function (providers, callback) {
+exports.check = function (r, providers, callback) {
 	var identities = [];
 	var waitfor = WAITFOR.parallel(function (err) {
 		if (err) return callback(err);
@@ -49,8 +70,10 @@ exports.check = function (providers, callback) {
 	providers.forEach(function (provider) {
 		return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 			return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
-				return get(uri, function(err, identity) {
+				console.log("check", uri);
+				return get(r, uri, function(err, identity) {
 					if (err) return callback(err);
+					console.log("found identity", identity);
 					if (identity) {
 						identities.push({
 							uri: uri,
@@ -66,7 +89,7 @@ exports.check = function (providers, callback) {
 }
 
 
-exports.lookup = function (providers, callback) {
+exports.lookup = function (r, providers, callback) {
 	var identities = [];
 	var waitfor = WAITFOR.parallel(function (err) {
 		if (err) return callback(err);
@@ -76,8 +99,10 @@ exports.lookup = function (providers, callback) {
 		providers.forEach(function (provider) {
 			return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 				return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
-					return get(uri, function(err, identity) {
+					console.log("lookup", uri);
+					return get(r, uri, function(err, identity) {
 						if (err) return callback(err);
+						console.log("found identity", identity);
 						if (identity) {
 
 							var info = JSON.parse(JSON.stringify(identity.identity));
