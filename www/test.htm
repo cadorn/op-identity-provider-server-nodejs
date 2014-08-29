@@ -2,17 +2,36 @@
 <head>
     <link rel="stylesheet" href="/style.css" />
     <script type="text/javascript" src="/jquery.min.js"></script>
+    <script type="text/javascript" src="/jquery.cookie.js"></script>
     <script type="text/javascript" src="//{{=view.hcs.config.logger.host}}/tools/logger/logger.js"></script>
     <script type="text/javascript">
     ((function(window) {
 
-
         const INNER_FRAME_PLACEHOLDER_ID = "inner-frame";
         const TOOLS_CONTAINER_ID = "tools";
-        const HCS_IDENTITY_DOMAIN = "{{=view.hcs.config.identity.domain}}";
         const LOGGER_HOST = "{{=view.hcs.config.logger.host}}";
+        // TODO: Get this URL from config.
         const OAUTH_LOGOUT_URL = "{{=view.hcs.config.identity.oauth.logoutURL}}";
-        const HCS_PROVIDER_DOMAIN = "{{=view.hcs.config.identity.oauth.authorizationURL}}".replace(/^https?:\/\/([^:\/]+)(?::\d+)?\/.+$/, "$1");
+//        const HCS_PROVIDER_DOMAIN = "{{=view.hcs.config.identity.oauth.authorizationURL}}".replace(/^https?:\/\/([^:\/]+)(?::\d+)?\/.+$/, "$1");
+
+
+        function initConfig() {
+            var identityDomain = $.cookie('test-config-identity-domain');
+            if (identityDomain) {
+                $("#config-identity-domain").val(identityDomain);
+            }
+        }
+
+        function getIdentityDomain () {
+            var identityDomain = $("#config-identity-domain").val();
+            if (!identityDomain) {
+                alert("Identity Domain must be set!");
+            }
+            $.cookie('test-config-identity-domain', identityDomain, {
+                path: "/test"
+            });
+            return identityDomain;
+        }
 
 
         /**
@@ -227,7 +246,7 @@
                 button.click(function() {
                     return sendMessageToInnerFrame({
                         "request": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$domain": getIdentityDomain(),
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
                             "$id": generateId(),
@@ -247,7 +266,7 @@
                 button.click(function() {
                     return sendMessageToInnerFrame({
                         "request": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$domain": getIdentityDomain(),
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
                             "$id": generateId(),
@@ -264,7 +283,7 @@
                 button.click(function() {
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessValidateRequest
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -291,7 +310,7 @@
                 button.click(function() {
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -299,7 +318,8 @@
                         "nonce": "na",
                         "lockbox": {
                             "$id": generateId(),
-                            "domain": HCS_PROVIDER_DOMAIN,
+//                            "domain": HCS_PROVIDER_DOMAIN,
+                            "domain": getIdentityDomain,
                             "accessToken": generateId(),
                             "accessSecretProof": generateId(),
                             "accessSecretProofExpires": Date.now() + 60 * 60 * 24 * 1000
@@ -330,7 +350,7 @@
                 button.click(function() {
 
                     var notify = {
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -342,8 +362,10 @@
                             "url": "www.openpeer.org"
                         },
                         "identity": {
-                            "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
-                            "provider": HCS_PROVIDER_DOMAIN
+//                            "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
+                            "base": "identity://" + getIdentityDomain() + "/",
+//                            "provider": HCS_PROVIDER_DOMAIN
+                            "provider": getIdentityDomain()
                         },
                         "browser": {
                             "visibility": "visible-on-demand",
@@ -372,7 +394,7 @@
                     // TODO: Document API call.
                     return sendMessageToInnerFrame({
                         "notify": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$domain": getIdentityDomain(),
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
                             "$id": generateId(),
@@ -400,7 +422,7 @@
                 button.click(function() {
                     return sendMessageToInnerFrame({
                         "request": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$domain": getIdentityDomain(),
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
                             "$id": generateId(),
@@ -420,7 +442,7 @@
                 button.click(function() {
                     return sendMessageToInnerFrame({
                         "request": {
-                            "$domain": HCS_IDENTITY_DOMAIN,
+                            "$domain": getIdentityDomain(),
                             "$appid": "com.hookflash.OpenPeerSampleApp",
                             "$handler": "identity",
                             "$id": generateId(),
@@ -437,7 +459,7 @@
                 button.click(function() {
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessValidateRequest
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -490,7 +512,7 @@
                         identity[name] = identityExtra[name];
                     }
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -498,7 +520,7 @@
                         "nonce": "na",
                         "lockbox": {
                             "$id": generateId(),
-                            "domain": HCS_IDENTITY_DOMAIN,
+                            "domain": getIdentityDomain(),
                             "accessToken": generateId(),
                             "accessSecretProof": generateId(),
                             "accessSecretProofExpires": Date.now() + 60 * 60 * 24 * 1000
@@ -522,7 +544,7 @@
                 button.click(function() {
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityLookupUpdateRequest
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity",
                         "$id": generateId(),
@@ -549,7 +571,7 @@
                     var identity = makeIdentityAccess();
                     var m = identity.uri.match(/^(.+?)\/([^\/]+)$/);
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity-lookup",
                         "$id": generateId(),
@@ -583,7 +605,7 @@
                     var identity = makeIdentityAccess();
                     var m = identity.uri.match(/^(.+?)\/([^\/]+)$/);
                     return callIdentityProvider({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "identity-lookup",
                         "$id": generateId(),
@@ -625,7 +647,7 @@
                     // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#RolodexServiceRequests-RolodexAccessRequest
                     var rolodexCredentials = JSON.parse($("#" + TOOLS_CONTAINER_ID + "-rolodex-init > [name=\"rolodex-token\"]").html());
                     return callRolodex({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "rolodex",
                         "$id": generateId(),
@@ -681,7 +703,7 @@ console.log("TODO: Implement!");
                     rolodex.version = "";
                     rolodex.refresh = false;
                     return callRolodex({
-                        "$domain": HCS_IDENTITY_DOMAIN,
+                        "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
                         "$handler": "rolodex",
                         "$id": generateId(),
@@ -845,6 +867,8 @@ console.log("TODO: Implement!");
         window.init = function () {
             log('init()');
 
+            initConfig();
+
             initTools();
 
             if (/trigger=login/.test(window.location.search)) {
@@ -858,6 +882,9 @@ console.log("TODO: Implement!");
 </head>
 <body onload="init();">
     <h1>Identity Provider &amp; Contacts Integration Tests</h1>
+    <div id="config">
+        <div><label>Identity Domain</label><input id="config-identity-domain" type="text" value=""/><span>e.g. default1-wellknown.hcs-stack-int-ia9ebcc9-9.vm.opp.me</span></div>
+    </div>
     <div id="tools"></div>
     <div id="inner-frame" class="hidden"></div>
 </body>

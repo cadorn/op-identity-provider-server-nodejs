@@ -12,6 +12,26 @@ h1 {
 	font-size: 25px;
 }
 
+#config {
+	border: 1px solid #000000;
+	padding: 5px;
+	margin: 5px;
+}
+
+#config LABEL {
+	margin-right: 10px;
+}
+
+#config INPUT[type="text"] {
+	width: 400px;
+	font-family: Helvetica;
+	font-size: 16px;
+}
+
+#config SPAN {
+	margin-left: 10px;
+}
+
 #tools {
 	border: 1px solid #000000;
 	padding: 5px;
@@ -49,4 +69,3 @@ h1 {
 #inner-frame.simulate-hidden {
 	border: 5px dashed #ff0000;
 }
-

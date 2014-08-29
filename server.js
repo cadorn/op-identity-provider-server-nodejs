@@ -36,10 +36,19 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 err.code = 404;
                 return callback(err);
             }
+            var config = null;
+            try {
+                config = JSON.parse(body.configuration);
+            } catch (err) {
+                console.log("Warning: Error '" + err.message + "' parsing JSON:", body.configuration);
+                var err = new Error("Domain not found");
+                err.code = 404;
+                return callback(err);
+            }
             return callback(null, {
                 host: host,
                 domain: domain,
-                config: JSON.parse(body.configuration),
+                config: config,
                 bootstrapper: body.bootstrapper
             });
         });
