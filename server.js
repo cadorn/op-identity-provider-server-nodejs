@@ -6,6 +6,7 @@ const FS = require("fs");
 const URL = require("url");
 const PASSPORT = require("passport");
 const PASSPORT_OAUTH2 = require("passport-oauth2");
+const PASSPORT_FACEBOOK = require("passport-facebook");
 const REQUEST = require("request");
 const CRYPTO = require("crypto");
 const UTILS = require("op-primitives-server-nodejs/utils");
@@ -61,6 +62,20 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 	passport.deserializeUser(function(obj, done) {
 	    return done(null, obj);
 	});
+
+    passport.use(new PASSPORT_FACEBOOK.Strategy({
+        clientID: "tmp",
+        clientSecret: "tmp",
+        callbackURL: serviceConfig.config.identity.oauth.callbackURL
+    }, function(accessToken, refreshToken, profile, done) {
+        return done(null, {
+            "type": "facebook",
+            "id": ""+profile.id,
+            "username": profile.displayName,
+            "accessToken": accessToken
+        });
+    }));
+
 	var oauthStrategy = new PASSPORT_OAUTH2.Strategy({
         callbackURL: serviceConfig.config.identity.oauth.callbackURL,
         // NOTE: These values get set dynamically based on the request $domain upon oauth authorization.
@@ -70,10 +85,11 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         clientSecret: "tmp"
     }, function(accessToken, refreshToken, profile, done) {
 	    return done(null, {
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            id: profile.id,
-            username: profile.username
+            "type": "oauth",
+            "id": ""+profile.id,
+            "username": profile.username,
+            "accessToken": accessToken,
+            "refreshToken": refreshToken
 	    });
 	  }
 	);
@@ -153,29 +169,70 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         if (!req.session.login) {
             return;
         }
-        passport._strategies.oauth2._oauth2._clientId = req.session.login.accountConfig.config.oauth.clientID;
-        passport._strategies.oauth2._oauth2._clientSecret = req.session.login.accountConfig.config.oauth.clientSecret;
-        passport._strategies.oauth2._oauth2._authorizeUrl = req.session.login.accountConfig.config.oauth.authorizationURL;
-        passport._strategies.oauth2._oauth2._accessTokenUrl = req.session.login.accountConfig.config.oauth.tokenURL;
-        passport._strategies.oauth2._key = "oauth2:" + URL.parse(req.session.login.accountConfig.config.oauth.authorizationURL).hostname;
-        passport._strategies.oauth2._profileURL = req.session.login.accountConfig.config.profile.profileURL;
+        var services = req.session.login.accountConfig.config.services;
+        if (services && services.oauth && services.oauth.enabled) {
+            passport._strategies.oauth2._oauth2._clientId = services.oauth.oauth.clientID;
+            passport._strategies.oauth2._oauth2._clientSecret = services.oauth.oauth.clientSecret;
+            passport._strategies.oauth2._oauth2._authorizeUrl = services.oauth.oauth.authorizationURL;
+            passport._strategies.oauth2._oauth2._accessTokenUrl = services.oauth.oauth.tokenURL;
+            passport._strategies.oauth2._key = "oauth2:" + URL.parse(services.oauth.oauth.authorizationURL).hostname;
+            passport._strategies.oauth2._profileURL = services.oauth.profile.profileURL;
+        } else {
+            passport._strategies.oauth2._oauth2._clientId = "tmp";
+            passport._strategies.oauth2._oauth2._clientSecret = "tmp";
+            passport._strategies.oauth2._oauth2._authorizeUrl = "tmp";
+            passport._strategies.oauth2._oauth2._accessTokenUrl = "tmp";
+            passport._strategies.oauth2._key = "tmp";
+            passport._strategies.oauth2._profileURL = "tmp";
+        }
+        if (services && services.facebook && services.facebook.enabled) {
+            passport._strategies.facebook._oauth2._clientId = services.facebook.appID;
+            passport._strategies.facebook._oauth2._clientSecret = services.facebook.appSecret;
+        } else {
+            passport._strategies.facebook._oauth2._clientId = "tmp";
+            passport._strategies.facebook._oauth2._clientSecret = "tmp";
+        }
+        console.log("passport._strategies", passport._strategies);
     }
 
-	app.get('/login', function(req, res, next) {
+
+    app.get('/login/facebook', function(req, res, next) {
         updateAuthConfig(req);
+        if (passport._strategies.facebook._oauth2._clientId === "tmp") {
+            return next(new Error("'facebook' service not configured!"));
+        }
         req.logout();
         if (req.query && req.query.returnTo) {
             req.session.returnTo = req.query.returnTo;
         }
+        req.session.authType = "facebook";
+        return next();
+    }, passport.authenticate('facebook', {
+        scope: [
+//            "read_friendlists",
+            "user_friends"
+        ]
+    }));
+
+	app.get('/login/oauth', function(req, res, next) {
+        updateAuthConfig(req);
+        if (passport._strategies.oauth2._oauth2._clientId === "tmp") {
+            return next(new Error("'oauth2' service not configured!"));
+        }
+        req.logout();
+        if (req.query && req.query.returnTo) {
+            req.session.returnTo = req.query.returnTo;
+        }
+        req.session.authType = "oauth2";
         return next();
     }, passport.authenticate('oauth2'));
 
     app.get('/oauth/callback', function(req, res, next) {
         updateAuthConfig(req);
-        return next();
-    }, passport.authenticate('oauth2', {
-        failureRedirect: '/fail'
-    }), function(req, res, next) {
+        return passport.authenticate(req.session.authType, {
+            failureRedirect: '/fail'
+        })(req, res, next);
+    }, function(req, res, next) {
         req.session.user = req.session.passport.user;
         req.session.authorized = true;
         var returnTo = null;
@@ -342,8 +399,18 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                                 accountConfig: accountConfig
                             };
 
+                            var providerRedirectURL = null;
+                            if (request.identity.type === "oauth") {
+                                providerRedirectURL = "/login/oauth";
+                            } else
+                            if (request.identity.type === "facebook") {
+                                providerRedirectURL = "/login/facebook";
+                            } else {
+                                return next(new Error("Unknown identity type '" + request.identity.type + "'!"));
+                            }
+
                             return respond({
-                                "providerRedirectURL": "/login",
+                                "providerRedirectURL": providerRedirectURL,
                                 "serverAuthenticationToken": req.session.login.serverAuthenticationToken
                             });
                         }
@@ -474,12 +541,19 @@ console.log("req.session", req.session);
                                 })
                                 */
                                 var tokenInfo = {
-                                    service: URL.parse(req.session.login.accountConfig.config.oauth.authorizationURL).hostname,
+                                    service: req.session.user.type,
                                     identifier: req.session.user.id,
-                                    consumer_key: req.session.login.accountConfig.config.oauth.clientID,
-                                    consumer_secret: req.session.login.accountConfig.config.oauth.clientSecret,
+                                    username: req.session.user.username,
                                     token: req.session.user.accessToken
                                 };
+                                if (tokenInfo.service === "oauth") {
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.oauth.oauth.clientID;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.oauth.oauth.clientSecret;
+                                } else
+                                if (tokenInfo.service === "facebook") {
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.facebook.appID;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.facebook.appSecret;
+                                }
                                 var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
                                     if (err) return callback(err);
@@ -554,15 +628,15 @@ console.log("req.session", req.session);
 
                                 identity.name = "Username: " + req.session.user.id;
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                identity.profile = req.session.login.accountConfig.config.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.profile = req.session.login.accountConfig.config.services.oauth.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                identity.vprofile = req.session.login.accountConfig.config.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.vprofile = req.session.login.accountConfig.config.services.oauth.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                identity.feed = req.session.login.accountConfig.config.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.feed = req.session.login.accountConfig.config.services.oauth.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
                                 identity.avatars = {
                                     "avatar": {
-                                        "url": req.session.login.accountConfig.config.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                        "url": req.session.login.accountConfig.config.services.oauth.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
                                     }
                                 };
 

@@ -362,9 +362,10 @@
                             "url": "www.openpeer.org"
                         },
                         "identity": {
-//                            "base": "identity://" + HCS_PROVIDER_DOMAIN + "/",
-                            "base": "identity://" + getIdentityDomain() + "/",
-//                            "provider": HCS_PROVIDER_DOMAIN
+                            // NOTE: We omit the base uri to allow the user to choose the login method
+                            //       from the ones available by the identity provider service.
+                            //       If we specify a base the identity provider should proceed with the login immediately.
+                            //"base": "identity://" + getIdentityDomain() + "/",
                             "provider": getIdentityDomain()
                         },
                         "browser": {
@@ -702,6 +703,37 @@ console.log("TODO: Implement!");
                     var rolodex = makeRolodexAccess();
                     rolodex.version = "";
                     rolodex.refresh = false;
+                    return callRolodex({
+                        "$domain": getIdentityDomain(),
+                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                        "$handler": "rolodex",
+                        "$id": generateId(),
+                        "$method": "rolodex-contacts-get",
+                        "clientNonce": "na",
+                        "rolodex": rolodex
+                    }, function (err, result) {
+                        if (result.error) {
+                            return showTools("rolodex", {
+                                result: JSON.stringify(result.error, null, 4)
+                            });
+                        } else {
+                            return showTools("rolodex", {
+                                result: JSON.stringify({
+                                    rolodex: result.rolodex,
+                                    identities: result.identities || null
+                                }, null, 4)
+                            });
+                        }
+                    });
+                });
+                button.appendTo(section);
+
+                button = $('<button>Contacts Get (refresh)</button>');
+                button.click(function() {
+                    // @see http://docs.openpeer.org/OpenPeerProtocolSpecificationAnnexRolodex/#RolodexServiceRequests-RolodexContactsGetRequest
+                    var rolodex = makeRolodexAccess();
+                    rolodex.version = "";
+                    rolodex.refresh = true;
                     return callRolodex({
                         "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
