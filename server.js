@@ -20,6 +20,9 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
 
     function loadConfiguration(host, callback) {
+        if (!host) {
+            return callback(new Error("No 'host' specified!"));
+        }
         var m = host.match(/^(.+?)-wellknown\./);
         if (!m) {
             var err = new Error("Could not parse host");
@@ -268,7 +271,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             template = template.replace(/\{\{\s*config.HF_PASSWORD2_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password2.uri);
             template = template.replace(/\{\{\s*config.SESSION_identityServiceAuthenticationURL\s*\}\}/g, "");
 
-            return loadConfiguration(req.cookies['test-config-identity-domain'], function(err, config) {
+            return loadConfiguration(req.query.domain || req.cookies['test-config-identity-domain'] || null, function(err, config) {
                 if (err) {
                     console.error("Warning: Test domain not yet specified!", err.stack);
                 } else {
