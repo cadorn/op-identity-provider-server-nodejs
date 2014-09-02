@@ -268,11 +268,29 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             template = template.replace(/\{\{\s*config.HF_PASSWORD2_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password2.uri);
             template = template.replace(/\{\{\s*config.SESSION_identityServiceAuthenticationURL\s*\}\}/g, "");
 
-            res.writeHead(200, {
-                "Content-Type": "text/html",
-                "Content-Length": template.length
+            return loadConfiguration(req.cookies['test-config-identity-domain'], function(err, config) {
+                if (err) {
+                    console.error("Warning: Test domain not yet specified!", err.stack);
+                } else {
+                    var services = [];
+                    if (
+                        config.config &&
+                        config.config.services
+                    ) {
+                        for (var name in config.config.services) {
+                            if (config.config.services[name].enabled) {
+                                services.push(name);
+                            }
+                        }
+                    }
+                    template = template.replace(/\{\{\s*config.HF_CONFIGURED_SERVICES\s*\}\}/g, JSON.stringify(services));
+                }
+                res.writeHead(200, {
+                    "Content-Type": "text/html",
+                    "Content-Length": template.length
+                });
+                return res.end(template);
             });
-            return res.end(template);
         });
     });
     app.get(/^\/assets\//, function (req, res, next) {
@@ -400,6 +418,7 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                             };
 
                             var providerRedirectURL = null;
+                            // TODO: Ensure `request.identity.type` is configured.
                             if (request.identity.type === "oauth") {
                                 providerRedirectURL = "/login/oauth";
                             } else

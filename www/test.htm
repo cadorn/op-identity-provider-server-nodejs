@@ -27,9 +27,7 @@
             if (!identityDomain) {
                 alert("Identity Domain must be set!");
             }
-            $.cookie('test-config-identity-domain', identityDomain, {
-                path: "/test"
-            });
+            $.cookie('test-config-identity-domain', identityDomain);
             return identityDomain;
         }
 
