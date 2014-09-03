@@ -8,6 +8,7 @@
         "passport": "~0.2.0",
         "passport-oauth2": "~1.1.2",
         "passport-facebook": "~1.0.3",
+        "passport-twitter": "~1.0.2",
         "request": "~2.36.0",
         "fs-extra": "~0.8.1",
         "waitfor": "~0.1.3",

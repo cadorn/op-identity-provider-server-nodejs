@@ -7,6 +7,7 @@ const URL = require("url");
 const PASSPORT = require("passport");
 const PASSPORT_OAUTH2 = require("passport-oauth2");
 const PASSPORT_FACEBOOK = require("passport-facebook");
+const PASSPORT_TWITTER = require("passport-twitter");
 const REQUEST = require("request");
 const CRYPTO = require("crypto");
 const UTILS = require("op-primitives-server-nodejs/utils");
@@ -76,6 +77,20 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             "id": ""+profile.id,
             "username": profile.displayName,
             "accessToken": accessToken
+        });
+    }));
+
+    passport.use(new PASSPORT_TWITTER.Strategy({
+        consumerKey: "tmp",
+        consumerSecret: "tmp",
+        callbackURL: serviceConfig.config.identity.oauth.callbackURL
+    }, function(accessToken, accessTokenSecret, profile, done) {
+        return done(null, {
+            "type": "twitter",
+            "id": profile.id,
+            "username": profile.username,
+            "accessToken": accessToken,
+            "accessTokenSecret": accessTokenSecret
         });
     }));
 
@@ -204,6 +219,13 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             passport._strategies.facebook._oauth2._clientSecret = "tmp";
         }
 
+        if (services && services.twitter && services.twitter.enabled) {
+            passport._strategies.twitter._oauth._consumerKey = services.twitter.apiKey;
+            passport._strategies.twitter._oauth._consumerSecret = services.twitter.apiSecret;
+        } else {
+            passport._strategies.twitter._oauth._consumerKey = "tmp";
+            passport._strategies.twitter._oauth._consumerSecret = "tmp";
+        }
     }
 
 
@@ -226,6 +248,20 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             //"user_friends"
         ]
     }*/));
+
+    app.get('/login/twitter', function(req, res, next) {
+        updateAuthConfig(req);
+        if (passport._strategies.twitter._oauth._consumerKey === "tmp") {
+            return next(new Error("'twitter' service not configured!"));
+        }
+        req.logout();
+        if (req.query && req.query.returnTo) {
+            req.session.returnTo = req.query.returnTo;
+        }
+        req.session.authType = "twitter";
+        return next();
+    }, passport.authenticate('twitter'));
+
 
 	app.get('/login/oauth', function(req, res, next) {
         updateAuthConfig(req);
@@ -437,6 +473,9 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                             } else
                             if (request.identity.type === "facebook") {
                                 providerRedirectURL = "/login/facebook";
+                            } else
+                            if (request.identity.type === "twitter") {
+                                providerRedirectURL = "/login/twitter";
                             } else {
                                 return next(new Error("Unknown identity type '" + request.identity.type + "'!"));
                             }
@@ -594,6 +633,11 @@ console.log("req.session", req.session);
                                 if (tokenInfo.service === "facebook") {
                                     tokenInfo.consumer_key = req.session.login.accountConfig.config.services.facebook.appID;
                                     tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.facebook.appSecret;
+                                } else
+                                if (tokenInfo.service === "twitter") {
+                                    tokenInfo.token_secret = req.session.user.accessTokenSecret;
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.twitter.apiKey;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.twitter.apiSecret;
                                 }
                                 var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
