@@ -173,6 +173,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             return;
         }
         var services = req.session.login.accountConfig.config.services;
+
         if (services && services.oauth && services.oauth.enabled) {
             passport._strategies.oauth2._oauth2._clientId = services.oauth.oauth.clientID;
             passport._strategies.oauth2._oauth2._clientSecret = services.oauth.oauth.clientSecret;
@@ -188,6 +189,13 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             passport._strategies.oauth2._key = "tmp";
             passport._strategies.oauth2._profileURL = "tmp";
         }
+
+        // NOTE: We force auth via v1. It is important that ALL logins for this app happen
+        //       using the v1 API. If an account logs in using v2 API ONLY ONCE, the facebook system
+        //       will always respond using v2 API rules!
+        //       See: https://github.com/hookflashco/hcs-stack-integration/issues/40#issuecomment-54231715
+//        passport._strategies.facebook._oauth2._authorizeUrl = "https://www.facebook.com/dialog/oauth?type=web_server";
+//        passport._strategies.facebook._oauth2._accessTokenUrl = "https://graph.facebook.com/oauth/access_token";
         if (services && services.facebook && services.facebook.enabled) {
             passport._strategies.facebook._oauth2._clientId = services.facebook.appID;
             passport._strategies.facebook._oauth2._clientSecret = services.facebook.appSecret;
@@ -195,7 +203,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             passport._strategies.facebook._oauth2._clientId = "tmp";
             passport._strategies.facebook._oauth2._clientSecret = "tmp";
         }
-        console.log("passport._strategies", passport._strategies);
+
     }
 
 
@@ -210,12 +218,14 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         }
         req.session.authType = "facebook";
         return next();
-    }, passport.authenticate('facebook', {
+    }, passport.authenticate('facebook'/*, {
         scope: [
-//            "read_friendlists",
-            "user_friends"
+            // v1
+            "read_friendlists"
+            // v2
+            //"user_friends"
         ]
-    }));
+    }*/));
 
 	app.get('/login/oauth', function(req, res, next) {
         updateAuthConfig(req);
@@ -479,6 +489,15 @@ console.log("req.session", req.session);
                             error: {
                                 $id: 403,
                                 reason: "identity.type does not match"
+                            }
+                        });
+                    }
+
+                    if (!req.session.user) {
+                        return respond({
+                            error: {
+                                $id: 403,
+                                reason: "no session found on server. reload page."
                             }
                         });
                     }
