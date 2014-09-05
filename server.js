@@ -32,7 +32,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         }
         var domain = m[1].replace(/-{2}/g, "__DASH__").replace(/-/g, ".").replace(/__DASH__/g, "-");
         return HELPERS.API.REQUEST({
-            url: "http://" + serviceConfig.config.hcs.accounts.hostname + "/idprovider/" + domain + "/config.json?token=" + serviceConfig.config.hcs.accounts.token,
+            url: "http://" + serviceConfig.config.hcs.accounts.hostname + "/idprovider/" + domain + "/runtime-config.json?token=" + serviceConfig.config.hcs.accounts.token,
             json: true
         }, function (err, response, body) {
             if (err) return callback(err);
