@@ -16,10 +16,22 @@
 
 
         function initConfig() {
-            var identityDomain = $.cookie('test-config-identity-domain');
+            var identityDomain = null;
+
+            // If the identityDomain is set in the query string we take it over the cookie.
+            var identityDomainMatch = (window.location.search && window.location.search.match(/identityDomain=([^\&]+)(\&|$)/)) || null;
+            if (identityDomainMatch) {
+                identityDomain = identityDomainMatch[1];
+            } else {
+                identityDomain = $.cookie('test-config-identity-domain');
+            }
+
             if (identityDomain) {
                 $("#config-identity-domain").val(identityDomain);
             }
+            $("#config-identity-domain").on("change keyup paste", function () {
+                getIdentityDomain();
+            });
         }
 
         function getIdentityDomain () {
@@ -904,6 +916,13 @@ console.log("TODO: Implement!");
             if (/trigger=login/.test(window.location.search)) {
                 window.initInnerFrame(getUrlFor("/login.html?reload=true"));
             }
+
+            if (
+                typeof parent === "object" &&
+                typeof parent.postMessage === "function"
+            ) {
+                parent.postMessage("notify:HCS-STACK-INTEGRATION:LOADED", "*");
+            }
         }
 
 
@@ -911,9 +930,8 @@ console.log("TODO: Implement!");
     </script>
 </head>
 <body onload="init();">
-    <h1>Identity Provider &amp; Contacts Integration Tests</h1>
-    <div id="config">
-        <div><label>Identity Domain</label><input id="config-identity-domain" type="text" value=""/><span>e.g. default1-wellknown.hcs-stack-int-ia9ebcc9-9.vm.opp.me</span></div>
+    <div id="config" class="hidden">
+        <div><label>Identity Domain</label><input id="config-identity-domain" type="text" value=""/></div>
     </div>
     <div id="tools"></div>
     <div id="inner-frame" class="hidden"></div>
