@@ -33,9 +33,10 @@ h1 {
 }
 
 #tools {
-	border: 1px solid #000000;
+	border: 2px solid #000000;
+	border-bottom-width: 8px;
 	padding: 5px;
-	margin: 5px;
+	margin: 0px;
 }
 
 #tools > DIV {
@@ -52,14 +53,21 @@ h1 {
 }
 
 #inner-frame {
-	border: 1px solid #000000;
-	padding: 5px;
-	margin: 5px;
-	width: 95%;
+	border: 8px solid #094913;
+	padding: 0px;
+	margin: 0px;
+}
+
+#inner-frame > DIV {
+	width: 100%;
 	height: 400px;
 }
 
-#inner-frame > IFRAME {
+#inner-frame > DIV.short {
+	height: 100px;
+}
+
+#inner-frame > DIV > IFRAME {
 	border: 0px;
 	width: 100%;
 	height: 100%;
@@ -67,5 +75,5 @@ h1 {
 }
 
 #inner-frame.simulate-hidden {
-	border: 5px dashed #ff0000;
+	border: 8px dashed #A5A5A5;
 }

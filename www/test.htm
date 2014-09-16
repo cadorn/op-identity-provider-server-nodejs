@@ -71,9 +71,9 @@
 
         function generateInnerFrame (url) {
             log('generateInnerFrame(url)', url);
-            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > IFRAME").remove();
+            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV > IFRAME").remove();
             initTools();
-            $('<iframe src="' + url + '"></iframe>').appendTo("#" + INNER_FRAME_PLACEHOLDER_ID);
+            $('<iframe src="' + url + '"></iframe>').appendTo("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV");
         }
 
         function hideInnerFrame() {
@@ -86,14 +86,37 @@
             $("#" + INNER_FRAME_PLACEHOLDER_ID).removeClass("simulate-hidden");
         }
 
-        function sendMessageToInnerFrame (message) {
-            log('sendToInnerFrame(message)', message);
-            var iframe = $("#" + INNER_FRAME_PLACEHOLDER_ID + " > IFRAME");
-            if (iframe.length === 0) {
-                throw new Error("Cannot send message to inner frame. No inner frame loaded!");
+        function isIframeLoaded() {
+            return ($("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV > IFRAME").length === 1);
+        }
+
+        function reloadInnerFrame() {
+            log('reloadInnerFrame() - window.initInnerFrame.identityLoginURL', window.initInnerFrame.identityLoginURL);
+            if (!window.initInnerFrame.identityLoginURL) {
+                throw new Error("`window.initInnerFrame.identityLoginURL` not set!");
             }
-            var url = iframe.attr("src");
-            return iframe[0].contentWindow.postMessage(message, url.replace(/$(https?:\/\/[^\/]+)/, "$1"));
+            var url = addQueryParameters(window.initInnerFrame.identityLoginURL, {
+                "reload": "true",
+                "t": Date.now()
+            });
+            initTools();
+            log('reloadInnerFrame() - url', url);
+            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV > IFRAME").attr("src", url);
+        }
+
+        function sendMessageToInnerFrame (message) {
+            if (loginWindow) {
+                log('sendToInnerFrame(message) - loginwindow', message);
+                return loginWindow.postMessage(message, "*");
+            } else {
+                log('sendToInnerFrame(message) - iframe', message);
+                var iframe = $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV > IFRAME");
+                if (iframe.length === 0) {
+                    throw new Error("Cannot send message to inner frame. No inner frame loaded!");
+                }
+                var url = iframe.attr("src");
+                return iframe[0].contentWindow.postMessage(message, url.replace(/$(https?:\/\/[^\/]+)/, "$1"));
+            }
         }
 
         function callServer (url, request, callback) {
@@ -151,7 +174,6 @@
             if (!m) {
                 throw new Error("Error parsing url '" + url + "'");
             }
-            console.log("m", m);
             var qs = {};
             if (m[2]) {
                 m[2].split("&").forEach(function (pair) {
@@ -221,6 +243,7 @@
             var button = null;
 
             $("#" + TOOLS_CONTAINER_ID).html("");
+            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV").removeClass("short");
 
             section = $('<div id="' + TOOLS_CONTAINER_ID + '-dev"><h2>Extra for development</h2></div>');
             section.appendTo($("#" + TOOLS_CONTAINER_ID));
@@ -359,6 +382,14 @@
                 button = $('<button>Access Start</button>');
                 button.click(function() {
 
+                    showTools(null, null, {
+                        disable: [
+                            {
+                                stage: "ready"
+                            }
+                        ]
+                    });
+
                     var notify = {
                         "$domain": getIdentityDomain(),
                         "$appid": "com.hookflash.OpenPeerSampleApp",
@@ -399,8 +430,16 @@
                 });
                 button.appendTo(section);
 
-                button = $('<button>Access Reset</button>');
+                button = $('<button id="button-identity-access-reset">Access Reset</button>');
                 button.click(function() {
+
+                    showTools(null, null, {
+                        disable: [
+                            {
+                                stage: "ready"
+                            }
+                        ]
+                    });
 
                     // TODO: Document API call.
                     return sendMessageToInnerFrame({
@@ -775,7 +814,24 @@ console.log("TODO: Implement!");
         }
 
         var resultTimeouts = {};
-        function showTools (stage, data) {
+        function showTools (stage, data, options) {
+            options = options || {};
+            [
+                "disable",
+                "enable"
+            ].forEach(function (type) {
+                if (!options[type]) return;
+                options[type].forEach(function (opts) {
+                    if (opts.stage) {
+                        var selector = "#" + TOOLS_CONTAINER_ID + "-" + opts.stage + " BUTTON";
+                        if (opts.button) {
+                            selector += "#button-" + opts.button;
+                        }
+                        $(selector).prop("disabled", (type === "disable"));
+                    }
+                });
+            });
+            if (!stage) return;
             $("#" + TOOLS_CONTAINER_ID + "-" + stage).removeClass("hidden");
             if (!lastToolsData[stage]) {
                 lastToolsData[stage] = {};
@@ -804,6 +860,52 @@ console.log("TODO: Implement!");
 
 
         /**
+         * Login window sequence.
+         */
+
+        var loginWindow = null;
+        function showLoginWindow() {
+            if (
+                loginWindow &&
+                !!loginWindow.closed
+            ) {
+                loginWindow.focus();
+                return loginWindow;
+            }
+            if (!window.initInnerFrame.identityLoginURL) {
+                throw new Error("`window.initInnerFrame.identityLoginURL` not set!");
+            }
+            loginWindow = window.open(addQueryParameters(window.initInnerFrame.identityLoginURL, {
+                "reinit": "false"
+            }), "hcs_test_login_window", [
+                "width=500",
+                "height=500",
+                "menubar=no",
+                "toolbar=no",
+                "personalbar=no",
+                "location=yes",
+                "resizable=yes",
+                "scrollbars=yes",
+                "status=yes"
+            ].join(","));
+            if (!loginWindow) {
+                console.error("We were unable to open a login window!");
+                alert("We were unable to open a login window!");
+                throw new Error("We were unable to open a login window!");
+            }
+            var isClosedInterval = setInterval(function () {
+                if (!loginWindow || loginWindow.closed) {
+                    log('showLoginWindow() - window closed');
+                    clearInterval(isClosedInterval);
+                    loginWindow = null;
+                }
+            }, 500);
+            loginWindow.focus();
+            return loginWindow;
+        }
+
+
+        /**
          * App API - These methods get called by the application hosting this web view.
          */
 
@@ -811,7 +913,18 @@ console.log("TODO: Implement!");
 
             log('window.initInnerFrame(identityLoginURL)', identityLoginURL);
 
-            generateInnerFrame(identityLoginURL);
+            if (!identityLoginURL) {
+                throw new Error("No `identityLoginURL` set!");
+            }
+
+            window.initInnerFrame.identityLoginURL = identityLoginURL;
+
+            if (isIframeLoaded()) {
+                log('window.initInnerFrame() - iframe already loaded. reload iframe.');
+                reloadInnerFrame();
+            } else {
+                generateInnerFrame(identityLoginURL);
+            }
 
             return true;
         }
@@ -822,6 +935,8 @@ console.log("TODO: Implement!");
          */
         window.addEventListener("message", function (event) {
             try {
+                if (!/^\{/.test(event.data)) return;
+
                 var message = JSON.parse(event.data);
                 log('window.addEventListener("message")', message);
 
@@ -830,22 +945,69 @@ console.log("TODO: Implement!");
 
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessWindowRequest
                         if (message.request.$method === "identity-access-window") {
-                            showTools("ready");
-                            if (message.request.browser.visibility) {
-                                showInnerFrame();
-                            } else {
-                                hideInnerFrame();
+
+                            function sendResult() {
+                                return sendMessageToInnerFrame({
+                                    "result": {
+                                        "$domain": message.request.$domain,
+                                        "$appid": message.request.$appid,
+                                        "$id": message.request.$id,
+                                        "$handler": "identity",
+                                        "$method": "identity-access-window",
+                                        "$timestamp": Date.now()/1000
+                                    }
+                                });
                             }
-                            return sendMessageToInnerFrame({
-                                "result": {
-                                    "$domain": message.request.$domain,
-                                    "$appid": message.request.$appid,
-                                    "$id": message.request.$id,
-                                    "$handler": "identity",
-                                    "$method": "identity-access-window",
-                                    "$timestamp": Date.now()/1000
+
+                            if (event.source === loginWindow) {
+                                return sendResult();
+                            } else {
+
+                                var relogin = null;
+                                if (
+                                    lastToolsData &&
+                                    lastToolsData.ready &&
+                                    lastToolsData.ready.relogin &&
+                                    (relogin = JSON.parse(lastToolsData.ready.relogin)) &&
+                                    relogin.reloginKey
+                                ) {
+                                    showTools("ready");
+                                } else {
+                                    showTools("ready", null, {
+                                        disable: [
+                                            {
+                                                stage: "ready",
+                                                button: "identity-access-reset"
+                                            }
+                                        ]
+                                    });
                                 }
-                            });
+
+                                // See if we should open a login window and if we need to.
+                                if (
+                                    // Should we open?
+                                    message.request.browser &&
+                                    message.request.browser.visibility === true &&
+                                    message.request.browser.top === true &&
+                                    // Do we need to?
+                                    (
+                                        !window.parent ||
+                                        window.parent !== window
+                                    )
+                                ) {
+                                    log('identity-access-window', "The identity provider requested a new top window for the login sequence.");
+                                    return showLoginWindow();
+                                } else {
+
+                                    if (message.request.browser.visibility) {
+                                        showInnerFrame();
+                                    } else {
+                                        hideInnerFrame();
+                                    }
+
+                                    return sendResult();
+                                }
+                            }
                         }
                     }
                 } else
@@ -853,14 +1015,50 @@ console.log("TODO: Implement!");
                     if (message.notify.$handler === "identity") {
                         // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityServiceRequests-IdentityAccessCompleteNotification
                         if (message.notify.$method === "identity-access-complete") {
+
+                            if (event.source === loginWindow) {
+                                log('identity-access-complete', "Close login window.");
+                                loginWindow.close();
+                                loginWindow = null;
+                                // If we had a window open we need to notify our iframe that identity access completed
+                                // so we can then call methods on it.
+                                sendMessageToInnerFrame({
+                                    "notify": {
+                                        "$domain": getIdentityDomain(),
+                                        "$appid": "com.hookflash.OpenPeerSampleApp",
+                                        "$handler": "identity",
+                                        "$id": generateId(),
+                                        "$method": "identity-access-complete"
+                                    }
+                                });
+                            }
+
+                            $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV").addClass("short");
+
                             showTools("ready", {
                                 relogin: JSON.stringify({
                                     reloginKey: message.notify.identity.reloginKey
                                 }, null, 4)
+                            }, {
+                                enable: [
+                                    {
+                                        stage: "ready",
+                                        button: "identity-access-reset"
+                                    }
+                                ]
                             });
-                            return showTools("loggedin", {
+
+                            showTools("loggedin", {
                                 identity: JSON.stringify(message.notify.identity, null, 4)
+                            }, {
+                                disable: [
+                                    {
+                                        stage: "ready"
+                                    }
+                                ]
                             });
+
+                            return;
                         }
                     }
                 } else
@@ -934,6 +1132,8 @@ console.log("TODO: Implement!");
         <div><label>Identity Domain</label><input id="config-identity-domain" type="text" value=""/></div>
     </div>
     <div id="tools"></div>
-    <div id="inner-frame" class="hidden"></div>
+    <div id="inner-frame" class="hidden">        
+        <div></div>
+    </div>
 </body>
 </html>
