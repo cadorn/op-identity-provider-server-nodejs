@@ -295,6 +295,77 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         return res.redirect(returnTo || '/');
     });
 
+    app.get('/facebook_v1/callback', function(req, res, next) {
+        if (!req.query.credentialsToken) {
+            return next(new Error("No 'credentialsToken' set in query string!"));
+        }
+        function resolveToken(token, callback) {
+            if (!/^https?:/.test(token)) return callback(null, token);
+            return REQUEST(token, function(err, response, body) {
+                if (err) return callback(err);
+                if (response.statusCode !== 200) {
+                    return callback(new Error("Got status " + response.statusCode + " while fetching: " + token));
+                }
+                return callback(null, body);
+            });
+        }
+        return resolveToken(req.query.credentialsToken, function(err, token) {
+            if (err) return next(err);
+
+            function parseToken (token, callback) {
+                /*
+                <sharedSecret> = 52+ plain text characters
+                <iv> = MD5 random hash (16 bytes)
+                token = hex(<iv>) + "-" + hex(AES.encrypt(sha256(<sharedSecret>), <iv>, <credentials>))
+                <credentials> = JSON.stringify({
+                    service: <name (github|twitter|linkedin|facebook)>
+                    consumer_key: <OAuth consumer/api key provided by service>,
+                    consumer_secret: <OAuth consumer/api secret provided by service>,
+                    token: <OAuth access token>,
+                    token_secret: <OAuth access token secret>
+                })
+                */
+                var tokenInfo = null;
+                try {
+                    var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
+                    var secretHash = CRYPTO.createHash("sha256");
+                    secretHash.update(tokenSecret);
+                    secretHash = secretHash.digest();
+                    var tokenParts = token.split("-");
+                    var iv = new Buffer(tokenParts[0], 'hex');
+                    var encryptdata = new Buffer(tokenParts[1], 'base64').toString('binary');
+                    var decipher = CRYPTO.createDecipheriv('aes-256-cbc', secretHash, iv);
+                    var decryptdata = decipher.update(encryptdata, 'binary', 'utf8');
+                    decryptdata += decipher.final('utf8');
+                    tokenInfo = JSON.parse(decryptdata);
+                } catch (err) {
+                    return callback(err);
+                }
+                return callback(null, tokenInfo);
+            }
+
+            return parseToken(token, function(err, tokenInfo) {
+                if (err) return next(err);
+                req.session.user = {
+                    "type": "facebook_v1",
+                    "id": tokenInfo.originalId,
+                    "username": tokenInfo.displayName,
+                    "accessToken": tokenInfo.token
+                };
+                req.session.authorized = true;
+                var returnTo = null;
+                if (req.session.login) {
+                    returnTo = req.session.login.callbackURL;
+                } else
+                if (req.session.returnTo) {
+                    returnTo = req.session.returnTo;
+                }
+                delete req.session.returnTo;
+                return res.redirect(returnTo || '/');
+            });
+        });
+    });    
+
     app.get(/^\/logout$/, function (req, res) {
         updateAuthConfig(req);
     	req.logout();
@@ -466,6 +537,12 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                                 accountConfig: accountConfig
                             };
 
+                            var services = accountConfig.config.services;
+
+                            if (!services || !services[request.identity.type] || !services[request.identity.type].enabled) {
+                                return next(new Error("Identity type '" + request.identity.type + "' not configured or enabled!"));
+                            }
+
                             var providerRedirectURL = null;
                             // TODO: Ensure `request.identity.type` is configured.
                             if (request.identity.type === "oauth") {
@@ -473,6 +550,9 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                             } else
                             if (request.identity.type === "facebook") {
                                 providerRedirectURL = "/login/facebook";
+                            } else
+                            if (request.identity.type === "facebook_v1") {
+                                providerRedirectURL = services[request.identity.type].loginUrl + "?callback=" + serviceConfig.config.identity.facebook_v1.callbackURL;
                             } else
                             if (request.identity.type === "twitter") {
                                 providerRedirectURL = "/login/twitter";

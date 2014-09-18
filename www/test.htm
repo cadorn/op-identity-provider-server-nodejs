@@ -22,6 +22,7 @@
             var identityDomainMatch = (window.location.search && window.location.search.match(/identityDomain=([^\&]+)(\&|$)/)) || null;
             if (identityDomainMatch) {
                 identityDomain = identityDomainMatch[1];
+                $.cookie('test-config-identity-domain', identityDomain);
             } else {
                 identityDomain = $.cookie('test-config-identity-domain');
             }
@@ -71,6 +72,7 @@
 
         function generateInnerFrame (url) {
             log('generateInnerFrame(url)', url);
+            closeLoginWindow();
             $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV > IFRAME").remove();
             initTools();
             $('<iframe src="' + url + '"></iframe>').appendTo("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV");
@@ -95,6 +97,7 @@
             if (!window.initInnerFrame.identityLoginURL) {
                 throw new Error("`window.initInnerFrame.identityLoginURL` not set!");
             }
+            closeLoginWindow();
             var url = addQueryParameters(window.initInnerFrame.identityLoginURL, {
                 "reload": "true",
                 "t": Date.now()
@@ -903,6 +906,20 @@ console.log("TODO: Implement!");
             loginWindow.focus();
             return loginWindow;
         }
+        function closeLoginWindow () {
+            if (!loginWindow || loginWindow.closed) {
+                // Not open or already closed.
+                return;
+            }
+            loginWindow.close();
+            loginWindow = null;
+            return;
+        }
+
+        window.addEventListener("unload", function listener () {
+            window.removeEventListener("unload", listener, false);
+            closeLoginWindow();
+        }, false);
 
 
         /**
@@ -1018,8 +1035,7 @@ console.log("TODO: Implement!");
 
                             if (event.source === loginWindow) {
                                 log('identity-access-complete', "Close login window.");
-                                loginWindow.close();
-                                loginWindow = null;
+                                closeLoginWindow();
                                 // If we had a window open we need to notify our iframe that identity access completed
                                 // so we can then call methods on it.
                                 sendMessageToInnerFrame({
