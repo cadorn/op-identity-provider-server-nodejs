@@ -14,8 +14,9 @@
         const OAUTH_LOGOUT_URL = "{{=view.hcs.config.identity.oauth.logoutURL}}";
 //        const HCS_PROVIDER_DOMAIN = "{{=view.hcs.config.identity.oauth.authorizationURL}}".replace(/^https?:\/\/([^:\/]+)(?::\d+)?\/.+$/, "$1");
 
+        var possibleLogins = null;
 
-        function initConfig() {
+        function initConfig (callback) {
             var identityDomain = null;
 
             // If the identityDomain is set in the query string we take it over the cookie.
@@ -33,6 +34,18 @@
             $("#config-identity-domain").on("change keyup paste", function () {
                 getIdentityDomain();
             });
+
+            $.ajax({
+                dataType: 'json',
+                type: "GET",
+                url: "http://" + identityDomain + "/.well-known/hcs-logins-get"
+            }).done(function (res) {
+
+                possibleLogins = res.result.logins;
+
+                return callback(null);
+
+            }).fail(callback);
         }
 
         function getIdentityDomain () {
@@ -248,6 +261,7 @@
             $("#" + TOOLS_CONTAINER_ID).html("");
             $("#" + INNER_FRAME_PLACEHOLDER_ID + " > DIV").removeClass("short");
 
+/*
             section = $('<div id="' + TOOLS_CONTAINER_ID + '-dev"><h2>Extra for development</h2></div>');
             section.appendTo($("#" + TOOLS_CONTAINER_ID));
 
@@ -268,6 +282,29 @@
                     window.initInnerFrame(OAUTH_LOGOUT_URL);
                 });
                 button.appendTo(section);
+*/
+            section = $('<div>Login using: <select id="' + TOOLS_CONTAINER_ID + '-identityBaseUri-select">' +
+                '<option value="identity://' + getIdentityDomain() + '/">Let User Choose</option>' + 
+                possibleLogins.map(function(login) {
+                    return '<option value="' + login.settings.identityFederateBaseURI + '">' + login.label + '</option>';
+                }).join("\n") +
+                '</select></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
+                $("#" + TOOLS_CONTAINER_ID + '-identityBaseUri-select').change(function (event) {
+                    $.cookie('test-config-identity-base', getIdentityFederatedBaseURI());
+                });
+                if ($.cookie('test-config-identity-base')) {
+                    $("#" + TOOLS_CONTAINER_ID + '-identityBaseUri-select').val($.cookie('test-config-identity-base'))
+                }
+                function getIdentityFederatedBaseURI() {
+                    return $("#" + TOOLS_CONTAINER_ID + '-identityBaseUri-select').val();
+                    if (!val) {
+                        val = "identity://" + getIdentityDomain() + "/";
+                        $("#" + TOOLS_CONTAINER_ID + '-identityBaseUri-select').val(val);
+                    }
+                    return val;
+                }
 
             section = $('<div id="' + TOOLS_CONTAINER_ID + '-init"><h2>App API on load</h2></div>');
             section.appendTo($("#" + TOOLS_CONTAINER_ID));
@@ -406,10 +443,7 @@
                             "url": "www.openpeer.org"
                         },
                         "identity": {
-                            // NOTE: We omit the base uri to allow the user to choose the login method
-                            //       from the ones available by the identity provider service.
-                            //       If we specify a base the identity provider should proceed with the login immediately.
-                            //"base": "identity://" + getIdentityDomain() + "/",
+                            "base": getIdentityFederatedBaseURI(),
                             "provider": getIdentityDomain()
                         },
                         "browser": {
@@ -1123,20 +1157,25 @@ console.log("TODO: Implement!");
         window.init = function () {
             log('init()');
 
-            initConfig();
+            initConfig(function (err) {
+                if (err) {
+                    console.error(err.stack);
+                    return;
+                }
 
-            initTools();
+                initTools();
 
-            if (/trigger=login/.test(window.location.search)) {
-                window.initInnerFrame(getUrlFor("/login.html?reload=true"));
-            }
+                if (/trigger=login/.test(window.location.search)) {
+                    window.initInnerFrame(getUrlFor("/login.html?reload=true"));
+                }
 
-            if (
-                typeof parent === "object" &&
-                typeof parent.postMessage === "function"
-            ) {
-                parent.postMessage("notify:HCS-STACK-INTEGRATION:LOADED", "*");
-            }
+                if (
+                    typeof parent === "object" &&
+                    typeof parent.postMessage === "function"
+                ) {
+                    parent.postMessage("notify:HCS-STACK-INTEGRATION:LOADED", "*");
+                }
+            });
         }
 
 

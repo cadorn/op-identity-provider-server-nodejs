@@ -24,7 +24,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         if (!host) {
             return callback(new Error("No 'host' specified!"));
         }
-        var m = host.match(/^(.+?)-wellknown\./);
+        var m = host.match(/^(.+?)\.identity\./);
         if (!m) {
             var err = new Error("Could not parse host");
             err.code = 404;
@@ -32,7 +32,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         }
         var domain = m[1].replace(/-{2}/g, "__DASH__").replace(/-/g, ".").replace(/__DASH__/g, "-");
         return HELPERS.API.REQUEST({
-            url: "http://" + serviceConfig.config.hcs.accounts.hostname + "/idprovider/" + domain + "/runtime-config.json?token=" + serviceConfig.config.hcs.accounts.token,
+            url: "http://" + serviceConfig.config.hcs.accounts.hostname + "/apps/" + domain + "/runtime-config.json?token=" + serviceConfig.config.hcs.accounts.token,
             json: true
         }, function (err, response, body) {
             if (err) return callback(err);
@@ -41,21 +41,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 err.code = 404;
                 return callback(err);
             }
-            var config = null;
-            try {
-                config = JSON.parse(body.configuration);
-            } catch (err) {
-                console.log("Warning: Error '" + err.message + "' parsing JSON:", body.configuration);
-                var err = new Error("Domain not found");
-                err.code = 404;
-                return callback(err);
-            }
-            return callback(null, {
-                host: host,
-                domain: domain,
-                config: config,
-                bootstrapper: body.bootstrapper
-            });
+            return callback(null, body);
         });
     }
 
@@ -187,15 +173,15 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         if (!req.session.login) {
             return;
         }
-        var services = req.session.login.accountConfig.config.services;
+        var services = req.session.login.accountConfig.services;
 
-        if (services && services.oauth && services.oauth.enabled) {
-            passport._strategies.oauth2._oauth2._clientId = services.oauth.oauth.clientID;
-            passport._strategies.oauth2._oauth2._clientSecret = services.oauth.oauth.clientSecret;
-            passport._strategies.oauth2._oauth2._authorizeUrl = services.oauth.oauth.authorizationURL;
-            passport._strategies.oauth2._oauth2._accessTokenUrl = services.oauth.oauth.tokenURL;
-            passport._strategies.oauth2._key = "oauth2:" + URL.parse(services.oauth.oauth.authorizationURL).hostname;
-            passport._strategies.oauth2._profileURL = services.oauth.profile.profileURL;
+        if (services && services.oauth) {
+            passport._strategies.oauth2._oauth2._clientId = services.oauth.mergedConfiguration.oauth.clientID;
+            passport._strategies.oauth2._oauth2._clientSecret = services.oauth.mergedConfiguration.oauth.clientSecret;
+            passport._strategies.oauth2._oauth2._authorizeUrl = services.oauth.mergedConfiguration.oauth.authorizationURL;
+            passport._strategies.oauth2._oauth2._accessTokenUrl = services.oauth.mergedConfiguration.oauth.tokenURL;
+            passport._strategies.oauth2._key = "oauth2:" + URL.parse(services.oauth.mergedConfiguration.oauth.authorizationURL).hostname;
+            passport._strategies.oauth2._profileURL = services.oauth.mergedConfiguration.profile.profileURL;
         } else {
             passport._strategies.oauth2._oauth2._clientId = "tmp";
             passport._strategies.oauth2._oauth2._clientSecret = "tmp";
@@ -211,17 +197,17 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         //       See: https://github.com/hookflashco/hcs-stack-integration/issues/40#issuecomment-54231715
 //        passport._strategies.facebook._oauth2._authorizeUrl = "https://www.facebook.com/dialog/oauth?type=web_server";
 //        passport._strategies.facebook._oauth2._accessTokenUrl = "https://graph.facebook.com/oauth/access_token";
-        if (services && services.facebook && services.facebook.enabled) {
-            passport._strategies.facebook._oauth2._clientId = services.facebook.appID;
-            passport._strategies.facebook._oauth2._clientSecret = services.facebook.appSecret;
+        if (services && services.facebook) {
+            passport._strategies.facebook._oauth2._clientId = services.facebook.mergedConfiguration.appID;
+            passport._strategies.facebook._oauth2._clientSecret = services.facebook.mergedConfiguration.appSecret;
         } else {
             passport._strategies.facebook._oauth2._clientId = "tmp";
             passport._strategies.facebook._oauth2._clientSecret = "tmp";
         }
 
-        if (services && services.twitter && services.twitter.enabled) {
-            passport._strategies.twitter._oauth._consumerKey = services.twitter.apiKey;
-            passport._strategies.twitter._oauth._consumerSecret = services.twitter.apiSecret;
+        if (services && services.twitter) {
+            passport._strategies.twitter._oauth._consumerKey = services.twitter.mergedConfiguration.apiKey;
+            passport._strategies.twitter._oauth._consumerSecret = services.twitter.mergedConfiguration.apiSecret;
         } else {
             passport._strategies.twitter._oauth._consumerKey = "tmp";
             passport._strategies.twitter._oauth._consumerSecret = "tmp";
@@ -393,14 +379,12 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     console.error("Warning: Test domain not yet specified!", err.stack);
                 } else {
                     var services = [];
-                    if (
-                        config.config &&
-                        config.config.services
-                    ) {
-                        for (var name in config.config.services) {
-                            if (config.config.services[name].enabled) {
-                                services.push(name);
-                            }
+                    if (config.services) {
+                        for (var name in config.services) {
+                            services.push({
+                                "name": config.services[name].service,
+                                "domain": config.services[name].identity.domain
+                            });
                         }
                     }
                     template = template.replace(/\{\{\s*config.HF_CONFIGURED_SERVICES\s*\}\}/g, JSON.stringify(services));
@@ -537,7 +521,7 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                                 accountConfig: accountConfig
                             };
 
-                            var services = accountConfig.config.services;
+                            var services = accountConfig.services;
 
                             if (!services || !services[request.identity.type] || !services[request.identity.type].enabled) {
                                 return next(new Error("Identity type '" + request.identity.type + "' not configured or enabled!"));
@@ -552,7 +536,7 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                                 providerRedirectURL = "/login/facebook";
                             } else
                             if (request.identity.type === "facebook_v1") {
-                                providerRedirectURL = services[request.identity.type].loginUrl + "?callback=" + serviceConfig.config.identity.facebook_v1.callbackURL;
+                                providerRedirectURL = services[request.identity.type].mergedConfiguration.loginUrl + "?callback=" + serviceConfig.config.identity.facebook_v1.callbackURL;
                             } else
                             if (request.identity.type === "twitter") {
                                 providerRedirectURL = "/login/twitter";
@@ -707,17 +691,17 @@ console.log("req.session", req.session);
                                     token: req.session.user.accessToken
                                 };
                                 if (tokenInfo.service === "oauth") {
-                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.oauth.oauth.clientID;
-                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.oauth.oauth.clientSecret;
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.services.oauth.mergedConfiguration.oauth.clientID;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.services.oauth.mergedConfiguration.oauth.clientSecret;
                                 } else
                                 if (tokenInfo.service === "facebook") {
-                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.facebook.appID;
-                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.facebook.appSecret;
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.services.facebook.mergedConfiguration.appID;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.services.facebook.mergedConfiguration.appSecret;
                                 } else
                                 if (tokenInfo.service === "twitter") {
                                     tokenInfo.token_secret = req.session.user.accessTokenSecret;
-                                    tokenInfo.consumer_key = req.session.login.accountConfig.config.services.twitter.apiKey;
-                                    tokenInfo.consumer_secret = req.session.login.accountConfig.config.services.twitter.apiSecret;
+                                    tokenInfo.consumer_key = req.session.login.accountConfig.services.twitter.mergedConfiguration.apiKey;
+                                    tokenInfo.consumer_secret = req.session.login.accountConfig.services.twitter.mergedConfiguration.apiSecret;
                                 }
                                 var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
@@ -793,15 +777,15 @@ console.log("req.session", req.session);
 
                                 identity.name = "Username: " + req.session.user.id;
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                identity.profile = req.session.login.accountConfig.config.services.oauth.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.profile = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                identity.vprofile = req.session.login.accountConfig.config.services.oauth.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.vprofile = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                identity.feed = req.session.login.accountConfig.config.services.oauth.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.feed = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
                                 identity.avatars = {
                                     "avatar": {
-                                        "url": req.session.login.accountConfig.config.services.oauth.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                        "url": req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
                                     }
                                 };
 
