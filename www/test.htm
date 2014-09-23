@@ -283,6 +283,9 @@
                 });
                 button.appendTo(section);
 */
+            section = $('<div><b>NOTE: This API Explorer is a work in progress. We use it to test service integrations.</b></div>');
+            section.appendTo($("#" + TOOLS_CONTAINER_ID));
+
             section = $('<div>Login using: <select id="' + TOOLS_CONTAINER_ID + '-identityBaseUri-select">' +
                 '<option value="identity://' + getIdentityDomain() + '/">Let User Choose</option>' + 
                 possibleLogins.map(function(login) {
@@ -314,7 +317,7 @@
                     window.initInnerFrame(getUrlFor("/login.html"));
                 });
                 button.appendTo(section);
-
+/*
                 button = $('<button>Lockbox Update (fail)</button>');
                 button.click(function() {
                     return sendMessageToInnerFrame({
@@ -412,6 +415,7 @@
                     });
                 });
                 button.appendTo(section);
+*/
 
                 button = $('<pre name="result"></pre>');
                 button.appendTo(section);
