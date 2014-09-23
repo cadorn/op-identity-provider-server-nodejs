@@ -11,7 +11,7 @@ function randomString(length) {
 
 
 
-function get (r, uri, callback) {
+function get (r, base, uri, callback) {
 	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
         if (err) return callback(err);
 		return identitiesTable.get(uri).run(r.conn, function (err, result) {
@@ -19,7 +19,7 @@ function get (r, uri, callback) {
 		    if (!result) {
 				return callback(null, null);
 		    }	
-			return callback(null, result.data);
+			return callback(null, result);
 		});
 	});
 }
@@ -33,10 +33,9 @@ function set (r, uri, data, callback) {
 				return callback(null);
 			});
 		} else {
-			return identitiesTable.insert({
-			    id: uri,
-			    data: data
-			}, {
+			data.id = uri;
+			data.base = uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1");
+			return identitiesTable.insert(data, {
 			    upsert: true
 			}).run(r.conn, function (err, result) {
 			    if (err) return callback(err);
@@ -47,13 +46,13 @@ function set (r, uri, data, callback) {
 }
 
 
-
 exports.create = function (r, identity, callback) {
 	console.log("create", identity.uri);
 	return set(r, identity.uri, {
 		updatedOn: Date.now(),
 		expiresOn: Date.now() + 60 * 60 * 24 * 1000,
-		identity: identity
+		identity: identity,
+		base: identity.uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1")
 	}, callback);
 }
 
@@ -71,7 +70,7 @@ exports.check = function (r, providers, callback) {
 		return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 			return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
 				console.log("check", uri);
-				return get(r, uri, function(err, identity) {
+				return get(r, provider.base, uri, function(err, identity) {
 					if (err) return callback(err);
 					console.log("found identity", identity);
 					if (identity) {
@@ -100,7 +99,7 @@ exports.lookup = function (r, providers, callback) {
 			return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 				return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
 					console.log("lookup", uri);
-					return get(r, uri, function(err, identity) {
+					return get(r, provider.base, uri, function(err, identity) {
 						if (err) return callback(err);
 						console.log("found identity", identity);
 						if (identity) {

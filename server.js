@@ -453,6 +453,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                         // TODO: This needs to be fixed when we send the actual proof. [Security]
                         request.identity.accessSecretProofExpires === req.session.credentials.accessSecretExpires
                     ) {
+                        console.log("validateAccess - load session by req.session.credentials");
                         return callback(null, true);
                     } else {
                         return callback(null, false);
@@ -466,7 +467,10 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                 request.identity.uri === activeTokens[request.identity.accessToken].credentials.uri
                 // TODO: Verify access proof.
             ) {
-                req.session = activeTokens[request.identity.accessToken];
+                console.log("validateAccess - load session by request.identity.accessToken");
+                for (var name in activeTokens[request.identity.accessToken]) {
+                    req.session[name] = activeTokens[request.identity.accessToken][name];
+                }
                 return callback(null, true);
             }
             return callback(null, false);
@@ -517,7 +521,7 @@ console.log("activeTokens", JSON.stringify(Object.keys(activeTokens), null, 4));
                                 identity: request.identity,
                                 serverAuthenticationToken: UTILS.generateId(),
                                 // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
-                                reloginKey: UTILS.generateId(),
+                                reloginKey: null,   // Gets set at login below, after authenticating user, before returning to client.
                                 accountConfig: accountConfig
                             };
 
@@ -605,6 +609,9 @@ console.log("req.session", req.session);
                         });
                     }
 
+                    // TODO: Use the `serverAuthenticationToken` to auth session. Better yet, use openpeer protocol sdk
+                    //       and erect a standard openeer session for idprovider.
+
                     // TODO: Instead of storing this on the session it should be stored in DB by access token. [Security]
                     req.session.credentials = {
                         "accessToken": UTILS.generateId(),
@@ -613,14 +620,26 @@ console.log("req.session", req.session);
                         "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
                     };
 
+                    // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
+                    req.session.login.reloginKey = UTILS.generateId();
+
+                    activeTokens[req.session.credentials.accessToken] = JSON.parse(JSON.stringify({
+                        login: req.session.login,
+                        user: req.session.user,
+                        authorized: req.session.authorized,
+                        authType: req.session.authType,
+                        credentials: {
+                            uri: req.session.credentials.uri
+                        },
+                        passport: {}
+                    }));
+
                     // NOTE: For now instead of resetting the login key we are going to use
                     //       the existing one if there is one
                     //req.session.login.reloginKey = req.session.credentials.accessToken;
                     if (req.session.login.reloginKey) {
-                        activeTokens[req.session.login.reloginKey] = req.session;
+                        activeTokens[req.session.login.reloginKey] = activeTokens[req.session.credentials.accessToken];
                     }
-
-                    activeTokens[req.session.credentials.accessToken] = req.session;
 
                     return respond({
                         "identity": {
@@ -672,6 +691,8 @@ console.log("req.session", req.session);
                         } else {
 
                             function makeToken(callback) {
+
+console.log("makeToken", req.session);
                                 /*
                                 <sharedSecret> = 52+ plain text characters
                                 <iv> = MD5 random hash (16 bytes)
@@ -703,6 +724,7 @@ console.log("req.session", req.session);
                                     tokenInfo.consumer_key = req.session.login.accountConfig.services.twitter.mergedConfiguration.apiKey;
                                     tokenInfo.consumer_secret = req.session.login.accountConfig.services.twitter.mergedConfiguration.apiSecret;
                                 }
+console.log("tokenInfo", tokenInfo);                                
                                 var tokenSecret = serviceConfig.config.rolodex.sharedSecret;
                                 return CRYPTO.randomBytes(32, function(err, buffer) {
                                     if (err) return callback(err);
@@ -743,6 +765,10 @@ console.log("req.session", req.session);
                 if (request.$method === "identity-access-validate") {
                     return validateAccess(request, function(err, hasAccess) {
                         if (err) return next(err);
+
+console.log("identity-access-validate - req.session", req.session);
+console.log("identity-access-validate - hasAccess", hasAccess);
+
                         if (!hasAccess) {
                             return respond({
                                 "error": {
@@ -760,6 +786,10 @@ console.log("req.session", req.session);
                 if (request.$method === "identity-lookup-update") {
                     return validateAccess(request, function(err, hasAccess) {
                         if (err) return next(err);
+
+console.log("identity-lookup-update - req.session", req.session);
+console.log("identity-lookup-update - hasAccess", hasAccess);
+
                         if (!hasAccess) {
                             return respond({
                                 "error": {
@@ -777,15 +807,15 @@ console.log("req.session", req.session);
 
                                 identity.name = "Username: " + req.session.user.id;
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                identity.profile = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.profile = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                identity.vprofile = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.vprofile = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                identity.feed = req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                identity.feed = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
                                 // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
                                 identity.avatars = {
                                     "avatar": {
-                                        "url": req.session.login.accountConfig.config.services.oauth.mergedConfiguration.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                        "url": req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
                                     }
                                 };
 
