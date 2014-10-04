@@ -12,7 +12,8 @@
         "request": "~2.36.0",
         "fs-extra": "~0.8.1",
         "waitfor": "~0.1.3",
-        "op-primitives-server-nodejs": "0.x"
+        "op-primitives-server-nodejs": "0.x",
+        "escape-regexp-component": "~1.0.2"
     },
 	"config": {
 		"pio.deploy.converter": {

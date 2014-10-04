@@ -13,6 +13,7 @@ const CRYPTO = require("crypto");
 const UTILS = require("op-primitives-server-nodejs/utils");
 
 const MODEL_IDENTITY_LOOKUP = require("./models/identity-lookup");
+const ESCAPE_REGEXP_COMPONENT = require("escape-regexp-component");
 
 
 var passport = null
@@ -24,7 +25,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         if (!host) {
             return callback(new Error("No 'host' specified!"));
         }
-        var m = host.match(/^(.+?)\.identity\./);
+        var m = host.match(new RegExp("^(.+?)\\." + ESCAPE_REGEXP_COMPONENT(serviceConfig.config.hcs.idprovider.hostedBaseDomain)));
         if (!m) {
             var err = new Error("Could not parse host");
             err.code = 404;
