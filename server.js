@@ -252,6 +252,8 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
 	app.get('/login/oauth', function(req, res, next) {
         updateAuthConfig(req);
+        console.log("req.headers.host", req.headers.host);
+        console.log("req.cookies", req.cookies);
         if (passport._strategies.oauth2._oauth2._clientId === "tmp") {
             return next(new Error("'oauth2' service not configured!"));
         }
@@ -260,11 +262,15 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             req.session.returnTo = req.query.returnTo;
         }
         req.session.authType = "oauth2";
+        console.log("let passport login user - req.session", req.session);
         return next();
     }, passport.authenticate('oauth2'));
 
     app.get('/oauth/callback', function(req, res, next) {
         updateAuthConfig(req);
+        console.log("req.headers.host", req.headers.host);
+        console.log("req.cookies", req.cookies);
+        console.log("let passport handle callback user - req.session", req.session);
         return passport.authenticate(req.session.authType, {
             failureRedirect: '/fail'
         })(req, res, next);
