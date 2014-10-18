@@ -15,6 +15,13 @@
         "op-primitives-server-nodejs": "0.x",
         "escape-regexp-component": "~1.0.2"
     },
+    "devDependencies": {
+        "mocha": "~1.18.2"
+    },
+    "scripts": {
+        "run": "node server.js",
+        "test": "./node_modules/.bin/mocha --reporter list tests/*.js"
+    },
 	"config": {
 		"pio.deploy.converter": {
 			"name": "nodejs-server"

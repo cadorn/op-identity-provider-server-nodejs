@@ -616,6 +616,18 @@ console.log("req.session", req.session);
                         });
                     }
 
+                    if (
+                        request.identity.type === "facebook" ||
+                        request.identity.type === "facebook_v1"
+                    ) {
+                        identityUriBase = "identity://facebook.com";
+                    } else
+                    if (request.identity.type === "twitter") {
+                        identityUriBase = "identity://twitter.com";
+                    } else {
+                        identityUriBase = request.identity.base.replace(/\/$/, "")
+                    }
+
                     // TODO: Use the `serverAuthenticationToken` to auth session. Better yet, use openpeer protocol sdk
                     //       and erect a standard openeer session for idprovider.
 
@@ -624,7 +636,7 @@ console.log("req.session", req.session);
                         "accessToken": UTILS.generateId(),
                         "accessSecret": UTILS.generateId(),
                         "accessSecretExpires": Math.floor(Date.now()/1000 + 60 * 60 * 24),
-                        "uri": request.identity.base.replace(/\/$/, "") + "/" + req.session.user.id
+                        "uri": identityUriBase + "/" + req.session.user.id
                     };
 
                     // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
@@ -812,19 +824,45 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                                 delete identity.accessSecretProof;
                                 delete identity.accessSecretProofExpires;
 
-                                identity.name = "Username: " + req.session.user.id;
-                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                identity.profile = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
-                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                identity.vprofile = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
-                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                identity.feed = req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
-                                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
-                                identity.avatars = {
-                                    "avatar": {
-                                        "url": req.session.login.accountConfig.services.oauth.mergedConfiguration.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
-                                    }
-                                };
+                                identity.name = req.session.user.username || ("User: " + req.session.user.id);
+
+                                var serviceConfig = req.session.login.accountConfig.services[req.session.login.identity.type].mergedConfiguration;
+
+                                if (serviceConfig.profile && serviceConfig.profile.publicProfileURL) {
+                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
+                                    identity.profile = serviceConfig.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                } else {
+                                    identity.profile = "";
+                                }
+
+                                if (serviceConfig.profile && serviceConfig.profile.publicVcardProfileURL) {
+                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
+                                    identity.vprofile = serviceConfig.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+                                } else {
+                                    identity.profile = "";
+                                }
+
+                                if (serviceConfig.profile && serviceConfig.profile.publicFeedURL) {
+                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
+                                    identity.feed = serviceConfig.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+                                } else {
+                                    identity.profile = "";
+                                }
+
+                                if (serviceConfig.profile && serviceConfig.profile.publicAvatarURL) {
+                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
+                                    identity.avatars = {
+                                        "avatar": {
+                                            "url": serviceConfig.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                                        }
+                                    };
+                                } else {
+                                    identity.avatars = {
+                                        "avatar": {
+                                            "url": ""
+                                        }
+                                    };
+                                }
 
                                 return MODEL_IDENTITY_LOOKUP.create(res.r, identity, function (err) {
                                     if (err) return next(err);
