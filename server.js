@@ -864,7 +864,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                                     };
                                 }
 
-                                return MODEL_IDENTITY_LOOKUP.create(res.r, identity, function (err) {
+                                return MODEL_IDENTITY_LOOKUP.create(res.r, identity, request.$domain, function (err) {
                                     if (err) return next(err);
                                     return respond({});
                                 });
@@ -930,5 +930,35 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
     app.post(/^\/identity-lookup-check$/, processRequest);
     app.post(/^\/identity-lookup$/, processRequest);
 
+    // Internal API used by portal.
+    app.post(/^\/iapi$/, function (req, res, next) {
+
+console.log("call iAPI", req.body);
+
+        var action = req.body.action;
+        var domain = req.body.domain;
+
+        if (action === "clear") {
+
+            return MODEL_IDENTITY_LOOKUP.clearAllForDomain(res.r, domain, function (err) {
+                if (err) return next(err);
+                return res.end("{}");
+            });
+
+        } else
+        if (action === "get") {
+
+            return MODEL_IDENTITY_LOOKUP.allForDomain(res.r, domain, function (err, identities) {
+                if (err) return next(err);
+                return res.end(JSON.stringify({
+                    "identities": identities
+                }, null, 4));
+            });
+
+        } else {
+            res.writeHead(404);
+            return res.end("{}");
+        }
+    });
 });
 

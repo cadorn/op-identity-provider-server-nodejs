@@ -46,13 +46,14 @@ function set (r, uri, data, callback) {
 }
 
 
-exports.create = function (r, identity, callback) {
+exports.create = function (r, identity, domain, callback) {
 	console.log("create", identity.uri);
 	return set(r, identity.uri, {
 		updatedOn: Date.now(),
 		expiresOn: Date.now() + 60 * 60 * 24 * 1000,
 		identity: identity,
-		base: identity.uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1")
+		base: identity.uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1"),
+		domain: domain
 	}, callback);
 }
 
@@ -82,6 +83,40 @@ exports.check = function (r, providers, callback) {
 					return callback(null);
 				});
 			});
+		});
+	});
+	return waitfor();
+}
+
+
+exports.allForDomain = function(r, domain, callback) {
+	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
+        if (err) return callback(err);
+		return identitiesTable.filter({
+			domain: domain
+		}).run(r.conn, function (err, result) {
+		    if (err) return callback(err);
+		    if (!result) {
+				return callback(null, null);
+		    }
+			return result.toArray(function(err, results) {
+			    if (err) return callback(err);
+
+				return callback(null, results);
+			});
+		});
+	});
+	return waitfor();
+}
+
+exports.clearAllForDomain = function(r, domain, callback) {
+	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
+        if (err) return callback(err);
+		return identitiesTable.filter({
+			domain: domain
+		}).delete().run(r.conn, function (err) {
+		    if (err) return callback(err);
+			return callback(null);
 		});
 	});
 	return waitfor();
