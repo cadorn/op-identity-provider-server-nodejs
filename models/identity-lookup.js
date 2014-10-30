@@ -11,10 +11,10 @@ function randomString(length) {
 
 
 
-function get (r, base, uri, callback) {
+function get (r, base, uri, domain, callback) {
 	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
         if (err) return callback(err);
-		return identitiesTable.get(uri).run(r.conn, function (err, result) {
+		return identitiesTable.get(domain + "~" + uri).run(r.conn, function (err, result) {
 		    if (err) return callback(err);
 		    if (!result) {
 				return callback(null, null);
@@ -34,7 +34,6 @@ function set (r, uri, data, callback) {
 			});
 		} else {
 			data.id = uri;
-			data.base = uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1");
 			return identitiesTable.insert(data, {
 			    upsert: true
 			}).run(r.conn, function (err, result) {
@@ -45,23 +44,23 @@ function set (r, uri, data, callback) {
 	});
 }
 
-
 exports.create = function (r, identity, domain, callback) {
 	console.log("create", identity.uri);
-	return set(r, identity.uri, {
+	return set(r, domain + "~" + identity.uri, {
 		updatedOn: Date.now(),
 		expiresOn: Date.now() + 60 * 60 * 24 * 1000,
 		identity: identity,
 		base: identity.uri.replace(/^(identity:\/\/[^\/]+\/).*$/, "$1"),
-		domain: domain
+		domain: domain,
+		uri: identity.uri
 	}, callback);
 }
 
-exports.remove = function (r, identity, callback) {
-	return set(r, identity.uri, null, callback);
+exports.remove = function (r, identity, domain, callback) {
+	return set(r, domain + "~" + identity.uri, null, callback);
 }
 
-exports.check = function (r, providers, callback) {
+exports.check = function (r, providers, domain, callback) {
 	var identities = [];
 	var waitfor = WAITFOR.parallel(function (err) {
 		if (err) return callback(err);
@@ -71,7 +70,7 @@ exports.check = function (r, providers, callback) {
 		return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 			return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
 				console.log("check", uri);
-				return get(r, provider.base, uri, function(err, identity) {
+				return get(r, provider.base, uri, domain, function(err, identity) {
 					if (err) return callback(err);
 					console.log("found identity", identity);
 					if (identity) {
@@ -123,7 +122,7 @@ exports.clearAllForDomain = function(r, domain, callback) {
 }
 
 
-exports.lookup = function (r, providers, callback) {
+exports.lookup = function (r, providers, domain, callback) {
 	var identities = [];
 	var waitfor = WAITFOR.parallel(function (err) {
 		if (err) return callback(err);
@@ -134,7 +133,7 @@ exports.lookup = function (r, providers, callback) {
 			return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 				return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
 					console.log("lookup", uri);
-					return get(r, provider.base, uri, function(err, identity) {
+					return get(r, provider.base, uri, domain, function(err, identity) {
 						if (err) return callback(err);
 						console.log("found identity", identity);
 						if (identity) {

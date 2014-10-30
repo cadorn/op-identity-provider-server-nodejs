@@ -869,7 +869,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                                     return respond({});
                                 });
                             } else {
-                                return MODEL_IDENTITY_LOOKUP.remove(res.r, request.identity, function (err) {
+                                return MODEL_IDENTITY_LOOKUP.remove(res.r, request.identity, request.$domain, function (err) {
                                     if (err) return next(err);
                                     return respond({});
                                 });
@@ -886,7 +886,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                             request.providers.provider
                         ];
                     }
-                    return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, function (err, identities) {
+                    return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
                         return respond({
                             "identities": {
@@ -902,7 +902,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                             request.providers.provider
                         ];
                     }
-                    return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, function (err, identities) {
+                    return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
                         return respond({
                             "identities": {
