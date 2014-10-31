@@ -386,6 +386,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                     console.error("Warning: Test domain not yet specified!", err.stack);
                 } else {
                     var services = [];
+
                     if (config.services) {
                         for (var name in config.services) {
                             services.push({
@@ -395,6 +396,8 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
                         }
                     }
                     template = template.replace(/\{\{\s*config.HF_CONFIGURED_SERVICES\s*\}\}/g, JSON.stringify(services));
+
+                    template = template.replace(/\{\{\s*config.CONFIG_loginBackgroundColor\s*\}\}/g, config.application.identity.login.style["background-color"]);
                 }
                 res.writeHead(200, {
                     "Content-Type": "text/html",
