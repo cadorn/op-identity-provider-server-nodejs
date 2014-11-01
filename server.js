@@ -486,6 +486,49 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
             return callback(null, false);
         }
 
+        function augmentIdentityProperties (req, identity) {
+
+            identity.name = req.session.user.username || ("User: " + req.session.user.id);
+
+            var serviceConfig = req.session.login.accountConfig.services[req.session.login.identity.type].mergedConfiguration;
+
+            if (serviceConfig.profile && serviceConfig.profile.publicProfileURL) {
+                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
+                identity.profile = serviceConfig.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
+            } else {
+                identity.profile = "";
+            }
+
+            if (serviceConfig.profile && serviceConfig.profile.publicVcardProfileURL) {
+                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
+                identity.vprofile = serviceConfig.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
+            } else {
+                identity.profile = "";
+            }
+
+            if (serviceConfig.profile && serviceConfig.profile.publicFeedURL) {
+                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
+                identity.feed = serviceConfig.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
+            } else {
+                identity.profile = "";
+            }
+
+            if (serviceConfig.profile && serviceConfig.profile.publicAvatarURL) {
+                // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
+                identity.avatars = {
+                    "avatar": {
+                        "url": serviceConfig.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
+                    }
+                };
+            } else {
+                identity.avatars = {
+                    "avatar": {
+                        "url": ""
+                    }
+                };
+            }
+        }
+
         try {
 
             if (request.$handler === "identity-provider") {
@@ -663,15 +706,22 @@ console.log("req.session", req.session);
                         activeTokens[req.session.login.reloginKey] = activeTokens[req.session.credentials.accessToken];
                     }
 
+console.log("req.session", req.session);
+
+                    var identity = {
+                        "accessToken": req.session.credentials.accessToken,
+                        "accessSecret": req.session.credentials.accessSecret,
+                        "accessSecretExpires": req.session.credentials.accessSecretExpires,
+                        "uri": req.session.credentials.uri,
+                        // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
+                        "reloginKey": req.session.login.reloginKey
+                    };
+
+                    // HACK: Remove after protocol fixes when peer-lookup is done on startup.
+                    augmentIdentityProperties(req, identity);
+
                     return respond({
-                        "identity": {
-                            "accessToken": req.session.credentials.accessToken,
-                            "accessSecret": req.session.credentials.accessSecret,
-                            "accessSecretExpires": req.session.credentials.accessSecretExpires,
-                            "uri": req.session.credentials.uri,
-                            // TODO: Remove 'reloginKey' here as it should only be known to the client. [Security]
-                            "reloginKey": req.session.login.reloginKey
-                        },
+                        "identity": identity,
                         "lockbox": {
                             "reset": false,
                             // TODO: Set if available.
@@ -827,45 +877,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                                 delete identity.accessSecretProof;
                                 delete identity.accessSecretProofExpires;
 
-                                identity.name = req.session.user.username || ("User: " + req.session.user.id);
-
-                                var serviceConfig = req.session.login.accountConfig.services[req.session.login.identity.type].mergedConfiguration;
-
-                                if (serviceConfig.profile && serviceConfig.profile.publicProfileURL) {
-                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}
-                                    identity.profile = serviceConfig.profile.publicProfileURL.replace(/\{id\}/g, req.session.user.id);
-                                } else {
-                                    identity.profile = "";
-                                }
-
-                                if (serviceConfig.profile && serviceConfig.profile.publicVcardProfileURL) {
-                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}?format=vcard
-                                    identity.vprofile = serviceConfig.profile.publicVcardProfileURL.replace(/\{id\}/g, req.session.user.id);
-                                } else {
-                                    identity.profile = "";
-                                }
-
-                                if (serviceConfig.profile && serviceConfig.profile.publicFeedURL) {
-                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/feed
-                                    identity.feed = serviceConfig.profile.publicFeedURL.replace(/\{id\}/g, req.session.user.id);
-                                } else {
-                                    identity.profile = "";
-                                }
-
-                                if (serviceConfig.profile && serviceConfig.profile.publicAvatarURL) {
-                                    // e.g. http://hcs-stack-cust-oauth-ia10ccf8-1.vm.opp.me:81/profile/{id}/avatar
-                                    identity.avatars = {
-                                        "avatar": {
-                                            "url": serviceConfig.profile.publicAvatarURL.replace(/\{id\}/g, req.session.user.id)
-                                        }
-                                    };
-                                } else {
-                                    identity.avatars = {
-                                        "avatar": {
-                                            "url": ""
-                                        }
-                                    };
-                                }
+                                augmentIdentityProperties(req, identity);
 
                                 return MODEL_IDENTITY_LOOKUP.create(res.r, identity, request.$domain, function (err) {
                                     if (err) return next(err);
