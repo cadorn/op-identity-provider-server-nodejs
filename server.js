@@ -720,12 +720,16 @@ console.log("req.session", req.session);
                     // HACK: Remove after protocol fixes when peer-lookup is done on startup.
                     augmentIdentityProperties(req, identity);
 
+                    // HACK: Remove this once lockbox key gets generated in client JS.
+                    var secretHash = CRYPTO.createHash("sha256");
+                    secretHash.update(req.session.credentials.uri + ":secret-lockbox-key:" + req.session.authType);
+
                     return respond({
                         "identity": identity,
                         "lockbox": {
                             "reset": false,
                             // TODO: Set if available.
-                            "key": null
+                            "key": secretHash.digest("hex")
                         }
                     });
                 } else
