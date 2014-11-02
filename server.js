@@ -811,7 +811,7 @@ console.log("tokenInfo", tokenInfo);
                                         var cipher = CRYPTO.createCipheriv('aes-256-cbc', secretHash, iv);
                                         var encryptdata = cipher.update(JSON.stringify(tokenInfo), 'utf8', 'binary');
                                         encryptdata += cipher.final('binary');
-                                        token = iv.toString('hex') + "-" + new Buffer(encryptdata, 'binary').toString('hex');
+                                        token = iv.toString('hex') + "-" + new Buffer(encryptdata, 'binary').toString('base64');
                                     } catch(err) {
                                         return callback(err);
                                     }
