@@ -898,6 +898,57 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                 }
             } else
             if (request.$handler === "identity-lookup") {
+
+                var url = "http://hfservice-v1-rel-lespaul-i.hcs.io/identity";
+
+                console.log("Lookup identity at: " + url);
+
+                function callOldSystem(method) {
+                    return REQUEST({
+                        method: "POST",
+                        url: url,
+                        json: true,
+                        body: {
+                            "request": {
+                                "$domain": "identity-v1-rel-lespaul-i.hcs.io",
+                                "$appid": "com.hookflash.testapp-expiry-token-hash",
+                                "$id": "abc",
+                                "$handler": "identity-lookup",
+                                "$method": "identity-lookup",
+                                "providers": {
+                                    "provider": request.providers.provider
+                                }
+                            }
+                        }
+                    }, function (err, res, body) {
+                        if (err) return next(err);
+console.log(res.statusCode, res.statusCode === 200);
+console.log("body.result.identities", body.result.identities);
+                        if (
+                            res.statusCode === 200 &&
+                            body &&
+                            body.result &&
+                            body.result.identities &&
+                            body.result.identities.identity
+                        ) {
+                            return respond({
+                                "identities": {
+                                    "identity": body.result.identities.identity
+                                }
+                            });
+                        }
+
+                        console.log("Did not find identity at: " + url);
+
+                        return respond({
+                            "identities": {
+                                "identity": []
+                            }
+                        });
+                    });
+                }
+
+
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupCheckRequest
                 if (request.$method === "identity-lookup-check") {
                     if (!Array.isArray(request.providers.provider)) {
@@ -907,11 +958,16 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                     }
                     return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
-                        return respond({
-                            "identities": {
-                                "identity": identities
-                            }
-                        });
+
+                        if (identities && identities.length > 0) {
+                            return respond({
+                                "identities": {
+                                    "identity": identities
+                                }
+                            });
+                        }
+
+                        return callOldSystem("identity-lookup-check");
                     });
                 } else
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupRequest
@@ -923,11 +979,16 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                     }
                     return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
-                        return respond({
-                            "identities": {
-                                "identity": identities
-                            }
-                        });
+    
+                        if (identities && identities.length > 0) {
+                            return respond({
+                                "identities": {
+                                    "identity": identities
+                                }
+                            });
+                        }
+
+                        return callOldSystem("identity-lookup");
                     });
                 }
             }
