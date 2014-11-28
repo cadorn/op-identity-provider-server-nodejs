@@ -20,6 +20,10 @@ var passport = null
 
 require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, function(app, serviceConfig, HELPERS) {
 
+    var oldPeerFileCacheBasePath = PATH.join(process.env.PIO_SERVICE_DATA_BASE_PATH, "old-peer-files-from-lespaul");
+    if (!HELPERS.API.FS.existsSync(oldPeerFileCacheBasePath)) {
+        HELPERS.API.FS.mkdirsSync(oldPeerFileCacheBasePath);
+    }
 
     function loadConfiguration(host, callback) {
         if (!host) {
@@ -903,48 +907,121 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
 
                 console.log("Lookup identity at: " + url);
 
-                function callOldSystem(method) {
-                    return REQUEST({
-                        method: "POST",
-                        url: url,
-                        json: true,
-                        body: {
-                            "request": {
-                                "$domain": "identity-v1-rel-lespaul-i.hcs.io",
-                                "$appid": "com.hookflash.testapp-expiry-token-hash",
-                                "$id": "abc",
-                                "$handler": "identity-lookup",
-                                "$method": "identity-lookup",
-                                "providers": {
-                                    "provider": request.providers.provider
-                                }
-                            }
-                        }
-                    }, function (err, res, body) {
-                        if (err) return next(err);
-console.log(res.statusCode, res.statusCode === 200);
-console.log("body.result.identities", body.result.identities);
-                        if (
-                            res.statusCode === 200 &&
-                            body &&
-                            body.result &&
-                            body.result.identities &&
-                            body.result.identities.identity
-                        ) {
-                            return respond({
-                                "identities": {
-                                    "identity": body.result.identities.identity
-                                }
-                            });
-                        }
-
-                        console.log("Did not find identity at: " + url);
-
-                        return respond({
+                function callOldSystem(method, identities, callback) {
+console.log("request.$domain", request.$domain);
+                    // @see https://github.com/openpeer/opios/issues/363
+                    /*
+                        curl -v -k -H "Content-Type: application/json" -X POST -d '{"request" : {"$domain" : "test-cadorn-hcs-is-com.app.hcs.is","$appid" : "test-cadorn-hcs-is-com.app.hcs.is-KiuHy6uuOFVhsID1P9GW-1419731107-8605883a66d575ac0b961c52654c2e9aeb22096e","$timestamp" : 1417139202,"$handler" : "identity-lookup","$id" : "owtU372jI81U5T4bfOdb88hzFdOc06J9","$method" : "identity-lookup","providers" : {"provider" : {"base" : "identity://facebook.com/","separator" : ",","identities" : "100000504331207,520138406,100007572584075"}}}}' http://identity.hcs.is:5003/identity-lookup
+                        curl -v -k -H "Content-Type: application/json" -X POST -d '{"request" : {"$domain" : "test-cadorn-hcs-is-com.app.hcs.is","$appid" : "test-cadorn-hcs-is-com.app.hcs.is-KiuHy6uuOFVhsID1P9GW-1419731107-8605883a66d575ac0b961c52654c2e9aeb22096e","$timestamp" : 1417139202,"$handler" : "identity-lookup","$id" : "owtU372jI81U5T4bfOdb88hzFdOc06J9","$method" : "identity-lookup-check","providers" : {"provider" : {"base" : "identity://facebook.com/","separator" : ",","identities" : "100000504331207,520138406,100007572584075"}}}}' http://identity.hcs.is:5003/identity-lookup-check
+                    */
+                    if (
+                        request.$domain === "com-hookflash-hookflash.app.hcs.io"
+                        //|| request.$domain === "test-cadorn-hcs-is-com.app.hcs.is"
+                    ) {
+                        // We run logic below.
+                    } else {
+                        return callback({
                             "identities": {
-                                "identity": []
+                                "identity": identities
                             }
                         });
+                    }
+
+                    console.log("call old system");
+
+                    var lookupProviders = JSON.parse(JSON.stringify(request.providers.provider));
+
+                    lookupProviders.forEach(function(provider) {
+                        var missingIdentities = [];
+                        provider.identities.split(lookupProviders.separator || ",").forEach(function (identity) {
+                            var identityUri = provider.base + identity;
+//                            var cachePath = PATH.join(oldPeerFileCacheBasePath, method, identityUri.replace(/:\/\/|\//g, "-"));
+                            var found = false;
+                            identities.forEach(function (_identity) {
+                                if (found) return;
+                                if (_identity.uri === identityUri) {
+                                    found = true;
+                                }
+                            });
+                            if (!found) {
+//                                if (FS.existsSync(cachePath)) {
+//                                    identities.push(JSON.parse(FS.readFileSync(cachePath, "utf8")));
+//                                } else {
+                                    missingIdentities.push(identity);
+//                                }
+                            }
+                        });
+                        provider.identities = missingIdentities.join(lookupProviders.separator || ",");
+                    });
+                    lookupProviders = lookupProviders.filter(function (provider) {
+                        return (provider.identities !== "");
+                    });
+
+                    function fetchMissing (callback) {
+                        if (lookupProviders.length === 0) {
+                            return callback(null, null);
+                        }
+                        console.log("call lespaul for identities:", lookupProviders);
+                        return REQUEST({
+                            method: "POST",
+                            url: url,
+                            json: true,
+                            body: {
+                                "request": {
+                                    "$domain": "identity-v1-rel-lespaul-i.hcs.io",
+                                    "$appid": "com.hookflash.testapp-expiry-token-hash",
+                                    "$id": "abc",
+                                    "$handler": "identity-lookup",
+                                    "$method": "identity-lookup",
+                                    "providers": {
+                                        "provider": lookupProviders
+                                    }
+                                }
+                            }
+                        }, function (err, _res, body) {
+                            if (err) return next(err);
+                            if (
+                                _res.statusCode === 200 &&
+                                body &&
+                                body.result &&
+                                body.result.identities &&
+                                body.result.identities.identity
+                            ) {
+                                var missingIdentities = body.result.identities.identity;
+                                if (!Array.isArray(missingIdentities)) {
+                                    missingIdentities = [ missingIdentities ];
+                                }
+                                var waitfor = HELPERS.API.WAITFOR.serial(function (err) {
+                                    return callback(null, missingIdentities);
+                                });
+                                missingIdentities.forEach(function (identity) {
+
+                                    var cachePath = PATH.join(oldPeerFileCacheBasePath, method, identity.uri.replace(/:\/\/|\//g, "-"));
+                                    if (!FS.existsSync(cachePath)) {
+                                        console.log("Writing identity cache file for '" + identity.uri + "' to:", cachePath);
+                                        HELPERS.API.FS.outputFileSync(cachePath, JSON.stringify(identity, null, 4));
+                                    }
+
+                                    console.log("Insert identity file for '" + identity.uri + "' into db");
+                                    return waitfor(function (done) {
+                                        return MODEL_IDENTITY_LOOKUP.create(res.r, identity, request.$domain, function (err) {
+                                            if (err) return done(err);
+                                            return done();
+                                        });
+                                    });
+                                });
+                                return waitfor();
+                            }
+                            return callback(null, null);
+                        });
+                    }
+
+                    return fetchMissing(function(err, missingIdentities) {
+                        if (err) return callback(err);
+
+console.log("fetched missing identities", missingIdentities);
+
+                        return callback(null);
                     });
                 }
 
@@ -959,15 +1036,26 @@ console.log("body.result.identities", body.result.identities);
                     return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
 
-                        if (identities && identities.length > 0) {
-                            return respond({
-                                "identities": {
-                                    "identity": identities
-                                }
-                            });
-                        }
+                        return callOldSystem("identity-lookup-check", identities, function (err, identities) {
+                            if (err) return next(err);
 
-                        return callOldSystem("identity-lookup-check");
+                            if (identities) {
+                                return respond({
+                                    "identities": {
+                                        "identity": identities
+                                    }
+                                });
+                            }
+
+                            return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, request.$domain, function (err, identities) {
+                                if (err) return next(err);
+                                return respond({
+                                    "identities": {
+                                        "identity": identities
+                                    }
+                                });
+                            });
+                        });
                     });
                 } else
                 // @see http://docs.openpeer.org/OpenPeerProtocolSpecification/#IdentityLookupServiceRequests-IdentityLookupRequest
@@ -979,16 +1067,27 @@ console.log("body.result.identities", body.result.identities);
                     }
                     return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
-    
-                        if (identities && identities.length > 0) {
-                            return respond({
-                                "identities": {
-                                    "identity": identities
-                                }
-                            });
-                        }
 
-                        return callOldSystem("identity-lookup");
+                        return callOldSystem("identity-lookup", identities, function (err, identities) {
+                            if (err) return next(err);
+
+                            if (identities) {
+                                return respond({
+                                    "identities": {
+                                        "identity": identities
+                                    }
+                                });
+                            }
+
+                            return MODEL_IDENTITY_LOOKUP.lookup(res.r, request.providers.provider, request.$domain, function (err, identities) {
+                                if (err) return next(err);
+                                return respond({
+                                    "identities": {
+                                        "identity": identities
+                                    }
+                                });
+                            });
+                        });
                     });
                 }
             }
