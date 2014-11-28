@@ -908,7 +908,7 @@ console.log("identity-lookup-update - hasAccess", hasAccess);
                 console.log("Lookup identity at: " + url);
 
                 function callOldSystem(method, identities, callback) {
-console.log("request.$domain", request.$domain);
+
                     // @see https://github.com/openpeer/opios/issues/363
                     /*
                         curl -v -k -H "Content-Type: application/json" -X POST -d '{"request" : {"$domain" : "test-cadorn-hcs-is-com.app.hcs.is","$appid" : "test-cadorn-hcs-is-com.app.hcs.is-KiuHy6uuOFVhsID1P9GW-1419731107-8605883a66d575ac0b961c52654c2e9aeb22096e","$timestamp" : 1417139202,"$handler" : "identity-lookup","$id" : "owtU372jI81U5T4bfOdb88hzFdOc06J9","$method" : "identity-lookup","providers" : {"provider" : {"base" : "identity://facebook.com/","separator" : ",","identities" : "100000504331207,520138406,100007572584075"}}}}' http://identity.hcs.is:5003/identity-lookup
@@ -920,14 +920,11 @@ console.log("request.$domain", request.$domain);
                     ) {
                         // We run logic below.
                     } else {
-                        return callback({
-                            "identities": {
-                                "identity": identities
-                            }
-                        });
+                        console.log("return already fetched identities");
+                        return callback(null, identities);
                     }
 
-                    console.log("call old system");
+                    console.log("call old system using request.providers", request.providers);
 
                     var lookupProviders = JSON.parse(JSON.stringify(request.providers.provider));
 
@@ -979,7 +976,7 @@ console.log("request.$domain", request.$domain);
                                 }
                             }
                         }, function (err, _res, body) {
-                            if (err) return next(err);
+                            if (err) return callback(err);
                             if (
                                 _res.statusCode === 200 &&
                                 body &&
@@ -992,6 +989,7 @@ console.log("request.$domain", request.$domain);
                                     missingIdentities = [ missingIdentities ];
                                 }
                                 var waitfor = HELPERS.API.WAITFOR.serial(function (err) {
+                                    if (err) return callback(err);
                                     return callback(null, missingIdentities);
                                 });
                                 missingIdentities.forEach(function (identity) {
