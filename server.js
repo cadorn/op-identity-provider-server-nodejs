@@ -377,7 +377,16 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
     // @see https://github.com/openpeer/hcs-system/blob/master/architecture/servers/HCS%20protocol%20-%20Identity%20Provider.md#44-social-provider-authentication-request
     app.get(/^\/login.html$/, function (req, res) {
-        return FS.readFile(serviceConfig.config.loginTemplatePath, "utf8", function(err, template) {
+
+        var tplPath = serviceConfig.config.loginTemplatePath;
+
+        if (req.query.devap) {
+            // TODO: Check url against dev access proof (devap) by hasing URI with dev secret from config.
+            //       We need this to ensure nobody can load dev sources.
+            tplPath = serviceConfig.config.loginDevTemplatePath;
+        }
+
+        return FS.readFile(tplPath, "utf8", function(err, template) {
 
             template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, serviceConfig.config.logger.host);
             template = template.replace(/\{\{\s*config.ASSET_PATH\s*\}\}/g, "/assets");
