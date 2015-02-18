@@ -388,7 +388,10 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
         return FS.readFile(tplPath, "utf8", function(err, template) {
 
-            template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, serviceConfig.config.logger.host);
+            template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, serviceConfig.config.logger.web.host);
+            template = template.replace(/\{\{\s*config.HF_LOGGER_API_LOGGER\s*\}\}/g, serviceConfig.config.logger.web.api.logger);
+            template = template.replace(/\{\{\s*config.HF_LOGGER_API_RECORD\s*\}\}/g, serviceConfig.config.logger.web.api.record);
+
             template = template.replace(/\{\{\s*config.ASSET_PATH\s*\}\}/g, "/assets");
             template = template.replace(/\{\{\s*config.HF_PASSWORD1_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password1.uri);
             template = template.replace(/\{\{\s*config.HF_PASSWORD2_BASEURI\s*\}\}/g, serviceConfig.config.hcs.password2.uri);
