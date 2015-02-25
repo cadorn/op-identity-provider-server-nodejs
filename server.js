@@ -231,14 +231,11 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
         }
         req.session.authType = "facebook";
         return next();
-    }, passport.authenticate('facebook'/*, {
+    }, passport.authenticate('facebook', {
         scope: [
-            // v1
-            "read_friendlists"
-            // v2
-            //"user_friends"
+            "user_friends"
         ]
-    }*/));
+    }));
 
     app.get('/login/twitter', function(req, res, next) {
         updateAuthConfig(req);
