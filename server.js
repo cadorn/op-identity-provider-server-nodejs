@@ -1040,6 +1040,19 @@ console.log("fetched missing identities", missingIdentities);
                             request.providers.provider
                         ];
                     }
+                    if (
+                        request.providers.provider &&
+                        request.providers.provider[0] &&
+                        request.providers.provider[0].identities === "*"
+                    ) {
+                        if (request["$*ap"] !== serviceConfig.config.hcs.identity["$*ap"]) {
+                            return respond({
+                                "identities": {
+                                    "identity": identities
+                                }
+                            });
+                        }
+                    }
                     return MODEL_IDENTITY_LOOKUP.check(res.r, request.providers.provider, request.$domain, function (err, identities) {
                         if (err) return next(err);
 

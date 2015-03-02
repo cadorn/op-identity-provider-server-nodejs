@@ -14,13 +14,25 @@ function randomString(length) {
 function get (r, base, uri, domain, callback) {
 	return r.tableEnsure(DB_NAME, "identity_lookup", "identities", function(err, identitiesTable) {
         if (err) return callback(err);
-		return identitiesTable.get(domain + "~" + uri).run(r.conn, function (err, result) {
-		    if (err) return callback(err);
-		    if (!result) {
-				return callback(null, null);
-		    }	
-			return callback(null, result);
-		});
+        if (uri === null) {
+			return identitiesTable.filter({
+	    		base: base
+	    	}).run(r.conn, function (err, cursor) {
+			    if (err) return callback(err);
+				return cursor.toArray(function(err, results) {
+				    if (err) return callback(err);
+					return callback(null, results);
+				});
+			});
+        } else {
+			return identitiesTable.get(domain + "~" + uri).run(r.conn, function (err, result) {
+			    if (err) return callback(err);
+			    if (!result) {
+					return callback(null, null);
+			    }	
+				return callback(null, result);
+			});
+		}
 	});
 }
 
@@ -62,6 +74,25 @@ exports.remove = function (r, identity, domain, callback) {
 
 exports.check = function (r, providers, domain, callback) {
 	var identities = [];
+	if (
+		providers.length === 1 &&
+		providers[0] &&
+		providers[0].identities === "*"
+	) {
+		return get(r, providers[0].base, null, domain, function(err, identities) {
+			if (err) return callback(err);
+//			console.log("found identities", identities);
+			if (identities.length > 0) {
+				identities = identities.map(function (identity) {
+					return {
+						uri: identity.uri,
+						updated: Math.floor(identity.updatedOn/1000)
+					};
+				});
+			}
+			return callback(null, identities);
+		});
+	}
 	var waitfor = WAITFOR.parallel(function (err) {
 		if (err) return callback(err);
 		return callback(null, identities);
@@ -69,10 +100,10 @@ exports.check = function (r, providers, domain, callback) {
 	providers.forEach(function (provider) {
 		return provider.identities.split(provider.separator || ",").forEach(function (identity) {
 			return waitfor(provider.base.replace(/\/$/, "") + "/" + identity, function (uri, callback) {
-				console.log("check", uri);
+//				console.log("check", uri);
 				return get(r, provider.base, uri, domain, function(err, identity) {
 					if (err) return callback(err);
-					console.log("found identity", identity);
+//					console.log("found identity", identity);
 					if (identity) {
 						identities.push({
 							uri: uri,
