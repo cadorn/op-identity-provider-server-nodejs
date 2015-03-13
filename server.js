@@ -373,7 +373,7 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
 
     // @see https://github.com/openpeer/hcs-system/blob/master/architecture/servers/HCS%20protocol%20-%20Identity%20Provider.md#44-social-provider-authentication-request
-    app.get(/^\/login.html$/, function (req, res) {
+    app.get(/^\/(?:[\d\.]+\/)?login.html$/, function (req, res) {
 
         var tplPath = serviceConfig.config.loginTemplatePath;
 
