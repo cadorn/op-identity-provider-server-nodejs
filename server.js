@@ -385,6 +385,8 @@ require("op-primitives-server-nodejs/server-prototype").for(module, __dirname, f
 
         return FS.readFile(tplPath, "utf8", function(err, template) {
 
+            template = template.replace(/\{\{\s*config.HCS_API_DEV_HOST\s*\}\}/g, serviceConfig.config.hcs['hcs-api'].dev.host);
+
             template = template.replace(/\{\{\s*config.HF_LOGGER_HOST\s*\}\}/g, serviceConfig.config.logger.web.host);
             template = template.replace(/\{\{\s*config.HF_LOGGER_API_LOGGER\s*\}\}/g, serviceConfig.config.logger.web.api.logger);
             template = template.replace(/\{\{\s*config.HF_LOGGER_API_RECORD\s*\}\}/g, serviceConfig.config.logger.web.api.record);
